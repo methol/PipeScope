@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	_ "modernc.org/sqlite"
 	"pipescope/internal/geo/areacity"
 	sqlitestore "pipescope/internal/store/sqlite"
-	_ "modernc.org/sqlite"
 )
 
 func TestImportAndMatchByProvinceCity(t *testing.T) {
@@ -51,6 +51,32 @@ func TestImportAndMatchByProvinceCity(t *testing.T) {
 	}
 	if bj.Adcode != "1101" {
 		t.Fatalf("expected beijing city adcode 1101, got %s", bj.Adcode)
+	}
+}
+
+func TestMatchFallsBackToProvinceWhenCityMissing(t *testing.T) {
+	db := openTempDB(t)
+	store := sqlitestore.New(db)
+	if err := store.InitSchema(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	imp := areacity.NewImporter(db)
+	csvPath := filepath.Join("testdata", "ok_geo_sample.csv")
+	if err := imp.ImportCSV(context.Background(), csvPath); err != nil {
+		t.Fatalf("import csv: %v", err)
+	}
+
+	m := areacity.NewMatcher(db)
+	got, ok, err := m.Match("北京市", "")
+	if err != nil {
+		t.Fatalf("match: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected matched row")
+	}
+	if got.Adcode != "1101" {
+		t.Fatalf("expected beijing city adcode 1101, got %s", got.Adcode)
 	}
 }
 

@@ -17,6 +17,12 @@ func NewMatcher(db *sql.DB) *Matcher {
 func (m *Matcher) Match(province, city string) (DimAdcode, bool, error) {
 	nProvince := normalize.NormalizeProvince(province)
 	nCity := normalize.NormalizeCity(city)
+	if nCity == "" {
+		nCity = nProvince
+	}
+	if nProvince == "" || nCity == "" {
+		return DimAdcode{}, false, nil
+	}
 
 	var row DimAdcode
 	err := m.db.QueryRow(`
