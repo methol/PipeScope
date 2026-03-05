@@ -1,0 +1,23 @@
+{
+  "name": "pipescope-admin",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "echarts": "^5.6.0",
+    "vue": "^3.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.0",
+    "@vue/test-utils": "^2.4.6",
+    "jsdom": "^24.1.1",
+    "typescript": "^5.9.3",
+    "vite": "^5.4.19",
+    "vitest": "^2.1.9"
+  }
+}
