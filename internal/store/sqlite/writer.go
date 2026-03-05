@@ -15,6 +15,8 @@ type Writer struct {
 	in            <-chan session.Event
 	batchSize     int
 	flushInterval time.Duration
+	region        RegionLookup
+	matcher       AdcodeMatcher
 }
 
 func NewWriter(db *sql.DB, in <-chan session.Event, batchSize int, flushInterval time.Duration) *Writer {
@@ -30,6 +32,11 @@ func NewWriter(db *sql.DB, in <-chan session.Event, batchSize int, flushInterval
 		batchSize:     batchSize,
 		flushInterval: flushInterval,
 	}
+}
+
+func (w *Writer) SetGeoEnricher(region RegionLookup, matcher AdcodeMatcher) {
+	w.region = region
+	w.matcher = matcher
 }
 
 func (w *Writer) Run(ctx context.Context) error {
@@ -100,6 +107,7 @@ INSERT INTO conn_events(
 		srcIP := extractHost(evt.SrcAddr)
 		dstHost := extractHost(evt.DstAddr)
 		dstPort := extractPort(evt.DstAddr)
+		geo := enrichGeoFields(evt, w.region, w.matcher)
 		if _, err := stmt.ExecContext(
 			ctx,
 			evt.RuleID,
@@ -117,11 +125,11 @@ INSERT INTO conn_events(
 			evt.TotalBytes,
 			evt.Status,
 			evt.Error,
-			"",
-			"",
-			"",
-			0.0,
-			0.0,
+			geo.Province,
+			geo.City,
+			geo.Adcode,
+			geo.Lat,
+			geo.Lng,
 		); err != nil {
 			_ = tx.Rollback()
 			return err
@@ -150,4 +158,3 @@ func extractPort(addr string) int {
 	}
 	return port
 }
-
