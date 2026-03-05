@@ -45,39 +45,63 @@ func (w *Writer) Run(ctx context.Context) error {
 
 	batch := make([]session.Event, 0, w.batchSize)
 
-	flush := func() error {
+	flush := func(execCtx context.Context) error {
 		if len(batch) == 0 {
 			return nil
 		}
-		if err := w.insertBatch(ctx, batch); err != nil {
+		if err := w.insertBatch(execCtx, batch); err != nil {
 			return err
 		}
 		batch = batch[:0]
 		return nil
 	}
 
+	flushWithGrace := func() error {
+		flushCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		return flush(flushCtx)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
-			if err := flush(); err != nil {
+			draining := true
+			for draining {
+				select {
+				case evt, ok := <-w.in:
+					if !ok {
+						draining = false
+						break
+					}
+					batch = append(batch, evt)
+					if len(batch) >= w.batchSize {
+						if err := flushWithGrace(); err != nil {
+							return err
+						}
+					}
+				default:
+					draining = false
+				}
+			}
+			if err := flushWithGrace(); err != nil {
 				return err
 			}
 			return nil
 		case evt, ok := <-w.in:
 			if !ok {
-				if err := flush(); err != nil {
+				if err := flushWithGrace(); err != nil {
 					return err
 				}
 				return nil
 			}
 			batch = append(batch, evt)
 			if len(batch) >= w.batchSize {
-				if err := flush(); err != nil {
+				if err := flush(ctx); err != nil {
 					return err
 				}
 			}
 		case <-ticker.C:
-			if err := flush(); err != nil {
+			if err := flush(ctx); err != nil {
 				return err
 			}
 		}

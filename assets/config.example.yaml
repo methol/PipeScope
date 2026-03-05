@@ -17,6 +17,8 @@ writer:
   queue_size: 4096
   batch_size: 200
   flush_interval_ms: 1000
+  full_queue_policy: "drop"  # drop|block|sample
+  sample_rate: 0.1
 
 timeouts:
   dial_ms: 1500

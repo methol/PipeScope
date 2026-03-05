@@ -10,5 +10,11 @@ func TestLoadConfig(t *testing.T) {
 	if cfg.Admin.Host != "127.0.0.1" || cfg.Admin.Port != 9100 {
 		t.Fatalf("admin config mismatch: %+v", cfg.Admin)
 	}
+	if cfg.Writer.FullQueuePolicy != "drop" {
+		t.Fatalf("writer full_queue_policy mismatch: %s", cfg.Writer.FullQueuePolicy)
+	}
+	if cfg.Writer.SampleRate != 0.1 {
+		t.Fatalf("writer sample_rate mismatch: %f", cfg.Writer.SampleRate)
+	}
 }
 
