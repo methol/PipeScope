@@ -1,0 +1,27 @@
+data:
+  sqlite_path: "./data/pipescope.db"
+  ip2region_xdb_path: "./data/ip2region_v4.xdb"
+  ip2region_v6_xdb_path: ""
+  ip2region_cache_policy: "vindex"   # noCache|vindex|content
+  ip2region_searchers: 20
+  areacity_csv_path: "./data/ok_geo.csv"
+  areacity_api_base_url: "http://127.0.0.1:9527"
+  areacity_api_instance: 0
+
+proxy_rules:
+  - id: "demo-rule"
+    listen: "0.0.0.0:10001"
+    forward: "127.0.0.1:10002"
+
+writer:
+  queue_size: 4096
+  batch_size: 200
+  flush_interval_ms: 1000
+
+timeouts:
+  dial_ms: 1500
+  idle_ms: 60000
+
+admin:
+  host: "127.0.0.1"
+  port: 9100
