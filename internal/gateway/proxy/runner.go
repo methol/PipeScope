@@ -218,6 +218,11 @@ func (r *Runner) emit(evt session.Event) {
 		default:
 		}
 	case "sample":
+		select {
+		case r.out <- evt:
+			return
+		default:
+		}
 		if r.sampleRate <= 0 {
 			return
 		}

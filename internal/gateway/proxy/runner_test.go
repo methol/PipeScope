@@ -136,6 +136,18 @@ func TestEmitSamplePolicyDoesNotBlockWhenQueueFull(t *testing.T) {
 	}
 }
 
+func TestEmitSamplePolicyEnqueuesWhenQueueHasCapacity(t *testing.T) {
+	events := make(chan session.Event, 1)
+	runner := NewRunner(nil, events)
+	runner.SetQueuePolicy("sample", 0)
+
+	runner.emit(session.Event{RuleID: "new"})
+
+	if len(events) != 1 {
+		t.Fatalf("expected event to be enqueued when queue has capacity, len=%d", len(events))
+	}
+}
+
 func TestSamplePolicyUsesPersistentRNG(t *testing.T) {
 	runner := NewRunner(nil, nil)
 	before := runner.rng
