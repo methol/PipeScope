@@ -1,7 +1,10 @@
 package http
 
 import (
+	"io/fs"
 	nethttp "net/http"
+	"path"
+	"strings"
 )
 
 type Server struct {
@@ -18,6 +21,7 @@ func NewServer(svc QueryService) *Server {
 	mux.HandleFunc("/api/rules", h.handleRules)
 	mux.HandleFunc("/api/sessions", h.handleSessions)
 	mux.HandleFunc("/api/overview", h.handleOverview)
+	mux.Handle("/", staticHandler())
 
 	return &Server{mux: mux}
 }
@@ -26,3 +30,23 @@ func (s *Server) Handler() nethttp.Handler {
 	return s.mux
 }
 
+func staticHandler() nethttp.Handler {
+	staticFS := EmbeddedStaticFS()
+	fileServer := nethttp.FileServer(nethttp.FS(staticFS))
+
+	return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		cleanPath := path.Clean(r.URL.Path)
+		trimmed := strings.TrimPrefix(cleanPath, "/")
+		if trimmed == "" {
+			trimmed = "index.html"
+		}
+		if _, err := fs.Stat(staticFS, trimmed); err == nil {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		r2 := r.Clone(r.Context())
+		r2.URL.Path = "/index.html"
+		fileServer.ServeHTTP(w, r2)
+	})
+}
