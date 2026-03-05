@@ -136,6 +136,23 @@ func TestEmitSamplePolicyDoesNotBlockWhenQueueFull(t *testing.T) {
 	}
 }
 
+func TestSamplePolicyUsesPersistentRNG(t *testing.T) {
+	runner := NewRunner(nil, nil)
+	before := runner.rng
+	runner.SetQueuePolicy("sample", 0.5)
+
+	for i := 0; i < 5; i++ {
+		runner.emit(session.Event{RuleID: "r"})
+	}
+
+	if runner.rng == nil {
+		t.Fatalf("rng should be initialized")
+	}
+	if before != runner.rng {
+		t.Fatalf("rng should be reused instead of recreated")
+	}
+}
+
 func startEchoServer(t *testing.T) string {
 	t.Helper()
 

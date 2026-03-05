@@ -25,6 +25,8 @@ type Runner struct {
 
 	queuePolicy string
 	sampleRate  float64
+	rng         *rand.Rand
+	rngMu       sync.Mutex
 
 	mu          sync.RWMutex
 	listeners   map[string]net.Listener
@@ -41,6 +43,7 @@ func NewRunner(rules []rule.Rule, out chan<- session.Event) *Runner {
 		dial:        defaultDialer.DialContext,
 		queuePolicy: "drop",
 		sampleRate:  0.1,
+		rng:         rand.New(rand.NewSource(time.Now().UnixNano())),
 		listeners:   make(map[string]net.Listener, len(rules)),
 		activeConns: make(map[net.Conn]struct{}),
 	}
@@ -219,8 +222,10 @@ func (r *Runner) emit(evt session.Event) {
 			return
 		}
 		if r.sampleRate < 1 {
-			rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-			if rng.Float64() > r.sampleRate {
+			r.rngMu.Lock()
+			v := r.rng.Float64()
+			r.rngMu.Unlock()
+			if v > r.sampleRate {
 				return
 			}
 		}
