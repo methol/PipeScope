@@ -2,7 +2,7 @@ WEB_DIR := web/admin
 WEB_DIST := web/dist
 EMBED_STATIC := internal/admin/http/static
 
-.PHONY: test test-go test-web build build-web sync-web run
+.PHONY: test test-go test-web build build-web sync-web fetch-geo-data run
 
 test: test-go test-web
 
@@ -26,6 +26,8 @@ sync-web:
 	mkdir -p $(EMBED_STATIC)
 	cp -R $(WEB_DIR)/dist/* $(EMBED_STATIC)/
 
+fetch-geo-data:
+	./scripts/fetch-geo-data.sh
+
 run:
 	go run ./cmd/pipescope -config assets/config.example.yaml
-

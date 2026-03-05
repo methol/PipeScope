@@ -1,9 +1,8 @@
 data:
   sqlite_path: "./data/pipescope.db"
-  ip2region_xdb_path: "./data/ip2region.xdb"
+  ip2region_xdb_path: "./data/ip2region_v4.xdb"
   areacity_csv_path: "./data/ok_geo.csv"
 
 admin:
   host: "127.0.0.1"
   port: 9100
-

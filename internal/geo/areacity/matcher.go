@@ -23,6 +23,7 @@ func (m *Matcher) Match(province, city string) (DimAdcode, bool, error) {
 SELECT adcode, province, city, district, lat, lng
 FROM dim_adcode
 WHERE normalized_province = ? AND normalized_city = ?
+ORDER BY LENGTH(adcode) DESC, adcode DESC
 LIMIT 1
 `, nProvince, nCity).Scan(
 		&row.Adcode,
@@ -40,4 +41,3 @@ LIMIT 1
 	}
 	return row, true, nil
 }
-

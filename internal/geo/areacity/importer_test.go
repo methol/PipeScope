@@ -35,6 +35,23 @@ func TestImportAndMatchByProvinceCity(t *testing.T) {
 	if got.Adcode == "" || got.Lat == 0 || got.Lng == 0 {
 		t.Fatalf("invalid result: %+v", got)
 	}
+	if got.Adcode != "4403" {
+		t.Fatalf("unexpected adcode: %s", got.Adcode)
+	}
+	if got.Province != "广东省" || got.City != "深圳市" {
+		t.Fatalf("unexpected row names: %+v", got)
+	}
+
+	bj, ok, err := m.Match("北京", "北京")
+	if err != nil {
+		t.Fatalf("match beijing: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected beijing matched row")
+	}
+	if bj.Adcode != "1101" {
+		t.Fatalf("expected beijing city adcode 1101, got %s", bj.Adcode)
+	}
 }
 
 func openTempDB(t *testing.T) *sql.DB {

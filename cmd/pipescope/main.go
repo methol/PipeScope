@@ -17,11 +17,11 @@ import (
 	adminhttp "pipescope/internal/admin/http"
 	adminservice "pipescope/internal/admin/service"
 	"pipescope/internal/config"
-	"pipescope/internal/geo/areacity"
-	"pipescope/internal/geo/ip2region"
 	"pipescope/internal/gateway/proxy"
 	"pipescope/internal/gateway/rule"
 	"pipescope/internal/gateway/session"
+	"pipescope/internal/geo/areacity"
+	"pipescope/internal/geo/ip2region"
 	sqlitestore "pipescope/internal/store/sqlite"
 
 	_ "modernc.org/sqlite"
@@ -72,8 +72,13 @@ func run(ctx context.Context, cfg *config.Config) error {
 		cfg.Writer.BatchSize,
 		time.Duration(cfg.Writer.FlushInterval)*time.Millisecond,
 	)
+	regionSearcher, err := ip2region.NewSearcher(cfg.Data.IP2RegionXDB)
+	if err != nil {
+		return fmt.Errorf("init ip2region searcher: %w", err)
+	}
+	defer regionSearcher.Close()
 	writer.SetGeoEnricher(
-		ip2region.NewSearcher(cfg.Data.IP2RegionXDB),
+		regionSearcher,
 		areacity.NewMatcher(db),
 	)
 
@@ -156,4 +161,3 @@ func convertRules(src []config.ProxyRule) []rule.Rule {
 	}
 	return out
 }
-

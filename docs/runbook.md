@@ -13,7 +13,17 @@ make build-web sync-web
 go build ./cmd/pipescope
 ```
 
-## 3. 启动
+## 3. 下载真实 geo 数据
+
+```bash
+make fetch-geo-data
+```
+
+默认会下载并生成：
+- `data/ip2region_v4.xdb`（来源：`lionsoul2014/ip2region`）
+- `data/ok_geo.csv`（来源：`xiangyuecn/AreaCity-JsSpider-StatsGov`）
+
+## 4. 启动
 
 ```bash
 go run ./cmd/pipescope -config assets/config.example.yaml
@@ -21,7 +31,7 @@ go run ./cmd/pipescope -config assets/config.example.yaml
 
 默认管理端地址：`http://127.0.0.1:9100`。
 
-## 4. 健康检查
+## 5. 健康检查
 
 ```bash
 curl http://127.0.0.1:9100/api/health
@@ -29,7 +39,7 @@ curl http://127.0.0.1:9100/api/health
 
 期望返回：`{"status":"ok"}`。
 
-## 5. 常用排查
+## 6. 常用排查
 
 1. 管理页无数据
 - 检查代理规则 `listen/forward` 是否可达。
