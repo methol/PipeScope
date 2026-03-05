@@ -2,6 +2,7 @@ package ip2region
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	ip2service "github.com/lionsoul2014/ip2region/binding/golang/service"
@@ -24,17 +25,67 @@ type Searcher struct {
 	lookupFn func(ip string) (string, error)
 }
 
-func NewSearcher(xdbPath string) (*Searcher, error) {
-	path := strings.TrimSpace(xdbPath)
-	if path == "" {
-		return &Searcher{}, nil
-	}
+type Config struct {
+	V4XDBPath   string
+	V6XDBPath   string
+	CachePolicy string
+	Searchers   int
+}
 
-	svc, err := ip2service.NewIp2RegionWithPath(path, "")
+func NewSearcher(xdbPath string) (*Searcher, error) {
+	return NewSearcherWithConfig(Config{V4XDBPath: xdbPath})
+}
+
+func NewSearcherWithConfig(cfg Config) (*Searcher, error) {
+	cachePolicy, err := parseCachePolicy(cfg.CachePolicy)
 	if err != nil {
 		return nil, err
 	}
+
+	searchers := cfg.Searchers
+	if searchers <= 0 {
+		searchers = 20
+	}
+
+	v4Path := strings.TrimSpace(cfg.V4XDBPath)
+	v6Path := strings.TrimSpace(cfg.V6XDBPath)
+	if v4Path == "" && v6Path == "" {
+		return &Searcher{}, nil
+	}
+
+	var v4Config *ip2service.Config
+	if v4Path != "" {
+		v4Config, err = ip2service.NewV4Config(cachePolicy, v4Path, searchers)
+		if err != nil {
+			return nil, fmt.Errorf("init ip2region v4 config: %w", err)
+		}
+	}
+
+	var v6Config *ip2service.Config
+	if v6Path != "" {
+		v6Config, err = ip2service.NewV6Config(cachePolicy, v6Path, searchers)
+		if err != nil {
+			return nil, fmt.Errorf("init ip2region v6 config: %w", err)
+		}
+	}
+
+	svc, err := ip2service.NewIp2Region(v4Config, v6Config)
+	if err != nil {
+		return nil, fmt.Errorf("create ip2region service: %w", err)
+	}
 	return &Searcher{service: svc}, nil
+}
+
+func parseCachePolicy(policy string) (int, error) {
+	p := strings.TrimSpace(policy)
+	if p == "" {
+		p = "vindex"
+	}
+	val, err := ip2service.CachePolicyFromName(p)
+	if err != nil {
+		return 0, fmt.Errorf("parse ip2region cache policy %q: %w", policy, err)
+	}
+	return val, nil
 }
 
 func (s *Searcher) Close() {

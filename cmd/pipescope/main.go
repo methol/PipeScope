@@ -11,6 +11,7 @@ import (
 	nethttp "net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -56,10 +57,6 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 
-	if err := loadAreaCityData(ctx, db, cfg.Data.AreaCityCSVPath); err != nil {
-		return err
-	}
-
 	queueSize := cfg.Writer.QueueSize
 	if queueSize <= 0 {
 		queueSize = 1024
@@ -72,14 +69,24 @@ func run(ctx context.Context, cfg *config.Config) error {
 		cfg.Writer.BatchSize,
 		time.Duration(cfg.Writer.FlushInterval)*time.Millisecond,
 	)
-	regionSearcher, err := ip2region.NewSearcher(cfg.Data.IP2RegionXDB)
+	regionSearcher, err := ip2region.NewSearcherWithConfig(ip2region.Config{
+		V4XDBPath:   cfg.Data.IP2RegionXDB,
+		V6XDBPath:   cfg.Data.IP2RegionV6XDB,
+		CachePolicy: cfg.Data.IP2RegionCachePolicy,
+		Searchers:   cfg.Data.IP2RegionSearcherPool,
+	})
 	if err != nil {
 		return fmt.Errorf("init ip2region searcher: %w", err)
 	}
 	defer regionSearcher.Close()
+
+	areaMatcher, err := initAreaCityMatcher(ctx, db, cfg)
+	if err != nil {
+		return err
+	}
 	writer.SetGeoEnricher(
 		regionSearcher,
-		areacity.NewMatcher(db),
+		areaMatcher,
 	)
 
 	writerCtx, writerCancel := context.WithCancel(context.Background())
@@ -130,6 +137,21 @@ func run(ctx context.Context, cfg *config.Config) error {
 		_ = <-writerErrCh
 		return err
 	}
+}
+
+func initAreaCityMatcher(ctx context.Context, db *sql.DB, cfg *config.Config) (sqlitestore.AdcodeMatcher, error) {
+	if strings.TrimSpace(cfg.Data.AreaCityAPIBaseURL) != "" {
+		m := areacity.NewHTTPMatcher(cfg.Data.AreaCityAPIBaseURL, cfg.Data.AreaCityAPIInstance)
+		if err := m.Ping(ctx); err != nil {
+			return nil, fmt.Errorf("ping areacity api failed: %w", err)
+		}
+		return m, nil
+	}
+
+	if err := loadAreaCityData(ctx, db, cfg.Data.AreaCityCSVPath); err != nil {
+		return nil, err
+	}
+	return areacity.NewMatcher(db), nil
 }
 
 func loadAreaCityData(ctx context.Context, db *sql.DB, csvPath string) error {

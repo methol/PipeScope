@@ -15,9 +15,14 @@ type Config struct {
 }
 
 type DataConfig struct {
-	SQLitePath      string `yaml:"sqlite_path"`
-	IP2RegionXDB    string `yaml:"ip2region_xdb_path"`
-	AreaCityCSVPath string `yaml:"areacity_csv_path"`
+	SQLitePath            string `yaml:"sqlite_path"`
+	IP2RegionXDB          string `yaml:"ip2region_xdb_path"`
+	IP2RegionV6XDB        string `yaml:"ip2region_v6_xdb_path"`
+	IP2RegionCachePolicy  string `yaml:"ip2region_cache_policy"`
+	IP2RegionSearcherPool int    `yaml:"ip2region_searchers"`
+	AreaCityCSVPath       string `yaml:"areacity_csv_path"`
+	AreaCityAPIBaseURL    string `yaml:"areacity_api_base_url"`
+	AreaCityAPIInstance   int    `yaml:"areacity_api_instance"`
 }
 
 type ProxyRule struct {
@@ -55,4 +60,3 @@ func Load(path string) (*Config, error) {
 
 	return &cfg, nil
 }
-
