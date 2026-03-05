@@ -1,0 +1,23 @@
+data:
+  sqlite_path: "./data/pipescope.db"
+  ip2region_xdb_path: "./data/ip2region.xdb"
+  areacity_csv_path: "./data/ok_geo.csv"
+
+proxy_rules:
+  - id: "demo-rule"
+    listen: "0.0.0.0:10001"
+    forward: "127.0.0.1:10002"
+
+writer:
+  queue_size: 4096
+  batch_size: 200
+  flush_interval_ms: 1000
+
+timeouts:
+  dial_ms: 1500
+  idle_ms: 60000
+
+admin:
+  host: "127.0.0.1"
+  port: 9100
+
