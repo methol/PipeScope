@@ -1,4 +1,4 @@
-package areacity
+package areacity_test
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"pipescope/internal/geo/areacity"
 	sqlitestore "pipescope/internal/store/sqlite"
 	_ "modernc.org/sqlite"
 )
@@ -17,13 +18,13 @@ func TestImportAndMatchByProvinceCity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	imp := NewImporter(db)
+	imp := areacity.NewImporter(db)
 	csvPath := filepath.Join("testdata", "ok_geo_sample.csv")
 	if err := imp.ImportCSV(context.Background(), csvPath); err != nil {
 		t.Fatalf("import csv: %v", err)
 	}
 
-	m := NewMatcher(db)
+	m := areacity.NewMatcher(db)
 	got, ok, err := m.Match("广东", "深圳")
 	if err != nil {
 		t.Fatalf("match: %v", err)

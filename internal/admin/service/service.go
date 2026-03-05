@@ -30,11 +30,10 @@ func (s *Service) ChinaMap(ctx context.Context, q MapQuery) ([]MapPoint, error) 
 		metricExpr = "COALESCE(SUM(total_bytes), 0)"
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
-SELECT adcode, province, city, MAX(lat) AS lat, MAX(lng) AS lng, `+metricExpr+` AS v
+rows, err := s.db.QueryContext(ctx, `
+SELECT COALESCE(NULLIF(adcode, ''), 'unknown') AS adcode, province, city, MAX(lat) AS lat, MAX(lng) AS lng, `+metricExpr+` AS v
 FROM conn_events
 WHERE start_ts >= ?
-  AND adcode <> ''
 GROUP BY adcode, province, city
 ORDER BY v DESC
 `, s.windowStartMS(q.Window))
@@ -138,12 +137,11 @@ func (s *Service) ProvinceMap(ctx context.Context, q ProvinceQuery) ([]MapPoint,
 	if q.Metric == MetricBytes {
 		metricExpr = "COALESCE(SUM(total_bytes), 0)"
 	}
-	rows, err := s.db.QueryContext(ctx, `
-SELECT adcode, province, city, MAX(lat) AS lat, MAX(lng) AS lng, `+metricExpr+` AS v
+rows, err := s.db.QueryContext(ctx, `
+SELECT COALESCE(NULLIF(adcode, ''), 'unknown') AS adcode, province, city, MAX(lat) AS lat, MAX(lng) AS lng, `+metricExpr+` AS v
 FROM conn_events
 WHERE start_ts >= ?
   AND province = ?
-  AND adcode <> ''
 GROUP BY adcode, province, city
 ORDER BY v DESC
 `, s.windowStartMS(q.Window), q.Province)
@@ -169,4 +167,3 @@ func (s *Service) windowStartMS(window time.Duration) int64 {
 	}
 	return s.now().Add(-window).UnixMilli()
 }
-
