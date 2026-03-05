@@ -32,9 +32,11 @@ type ProxyRule struct {
 }
 
 type WriterConfig struct {
-	QueueSize     int `yaml:"queue_size"`
-	BatchSize     int `yaml:"batch_size"`
-	FlushInterval int `yaml:"flush_interval_ms"`
+	QueueSize       int     `yaml:"queue_size"`
+	BatchSize       int     `yaml:"batch_size"`
+	FlushInterval   int     `yaml:"flush_interval_ms"`
+	FullQueuePolicy string  `yaml:"full_queue_policy"`
+	SampleRate      float64 `yaml:"sample_rate"`
 }
 
 type TimeoutsConfig struct {

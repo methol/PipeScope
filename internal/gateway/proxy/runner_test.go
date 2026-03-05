@@ -64,6 +64,107 @@ func TestProxyForwardsBytes(t *testing.T) {
 	}
 }
 
+func TestEmitDropPolicyDoesNotBlockWhenQueueFull(t *testing.T) {
+	events := make(chan session.Event, 1)
+	events <- session.Event{RuleID: "existing"}
+
+	runner := NewRunner(nil, events)
+	runner.SetQueuePolicy("drop", 1)
+
+	done := make(chan struct{})
+	go func() {
+		runner.emit(session.Event{RuleID: "new"})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("emit blocked with drop policy")
+	}
+
+	if len(events) != 1 {
+		t.Fatalf("expected channel to remain full, len=%d", len(events))
+	}
+}
+
+func TestEmitBlockPolicyBlocksWhenQueueFull(t *testing.T) {
+	events := make(chan session.Event, 1)
+	events <- session.Event{RuleID: "existing"}
+
+	runner := NewRunner(nil, events)
+	runner.SetQueuePolicy("block", 1)
+
+	done := make(chan struct{})
+	go func() {
+		runner.emit(session.Event{RuleID: "new"})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		t.Fatalf("emit should block when queue is full")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	<-events
+
+	select {
+	case <-done:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("emit did not unblock after draining channel")
+	}
+}
+
+func TestEmitSamplePolicyDoesNotBlockWhenQueueFull(t *testing.T) {
+	events := make(chan session.Event, 1)
+	events <- session.Event{RuleID: "existing"}
+
+	runner := NewRunner(nil, events)
+	runner.SetQueuePolicy("sample", 1)
+
+	done := make(chan struct{})
+	go func() {
+		runner.emit(session.Event{RuleID: "new"})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("emit blocked with sample policy")
+	}
+}
+
+func TestEmitSamplePolicyEnqueuesWhenQueueHasCapacity(t *testing.T) {
+	events := make(chan session.Event, 1)
+	runner := NewRunner(nil, events)
+	runner.SetQueuePolicy("sample", 0)
+
+	runner.emit(session.Event{RuleID: "new"})
+
+	if len(events) != 1 {
+		t.Fatalf("expected event to be enqueued when queue has capacity, len=%d", len(events))
+	}
+}
+
+func TestSamplePolicyUsesPersistentRNG(t *testing.T) {
+	runner := NewRunner(nil, nil)
+	before := runner.rng
+	runner.SetQueuePolicy("sample", 0.5)
+
+	for i := 0; i < 5; i++ {
+		runner.emit(session.Event{RuleID: "r"})
+	}
+
+	if runner.rng == nil {
+		t.Fatalf("rng should be initialized")
+	}
+	if before != runner.rng {
+		t.Fatalf("rng should be reused instead of recreated")
+	}
+}
+
 func startEchoServer(t *testing.T) string {
 	t.Helper()
 

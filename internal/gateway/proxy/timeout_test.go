@@ -63,6 +63,18 @@ func TestDialTimeoutStatus(t *testing.T) {
 	}
 }
 
+func TestMarkIOStatusUsesIOErr(t *testing.T) {
+	s := session.New("r-io", 10001, "1.1.1.1:1000", "2.2.2.2:80")
+	markIOStatus(s, errors.New("copy failed"))
+	evt := s.Finalize()
+	if evt.Status != "io_err" {
+		t.Fatalf("status=%s", evt.Status)
+	}
+	if evt.Error == "" {
+		t.Fatalf("expected error message")
+	}
+}
+
 func TestIsTimeoutError(t *testing.T) {
 	if !isTimeoutError(timeoutErr{}) {
 		t.Fatalf("expected timeout error")

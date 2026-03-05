@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"errors"
+	"math/rand"
 	"net"
 	"strconv"
 	"sync"
@@ -22,17 +23,29 @@ type Runner struct {
 	dialTimeout time.Duration
 	idleTimeout time.Duration
 
-	mu        sync.RWMutex
-	listeners map[string]net.Listener
+	queuePolicy string
+	sampleRate  float64
+	rng         *rand.Rand
+	rngMu       sync.Mutex
+
+	mu          sync.RWMutex
+	listeners   map[string]net.Listener
+	activeConns map[net.Conn]struct{}
+	connWG      sync.WaitGroup
+	closing     bool
 }
 
 func NewRunner(rules []rule.Rule, out chan<- session.Event) *Runner {
 	defaultDialer := &net.Dialer{}
 	return &Runner{
-		rules:     rules,
-		out:       out,
-		dial:      defaultDialer.DialContext,
-		listeners: make(map[string]net.Listener, len(rules)),
+		rules:       rules,
+		out:         out,
+		dial:        defaultDialer.DialContext,
+		queuePolicy: "drop",
+		sampleRate:  0.1,
+		rng:         rand.New(rand.NewSource(time.Now().UnixNano())),
+		listeners:   make(map[string]net.Listener, len(rules)),
+		activeConns: make(map[net.Conn]struct{}),
 	}
 }
 
@@ -45,6 +58,18 @@ func (r *Runner) SetDialFunc(fn dialFunc) {
 func (r *Runner) SetTimeouts(dialTimeout, idleTimeout time.Duration) {
 	r.dialTimeout = dialTimeout
 	r.idleTimeout = idleTimeout
+}
+
+func (r *Runner) SetQueuePolicy(policy string, sampleRate float64) {
+	switch policy {
+	case "drop", "sample", "block":
+		r.queuePolicy = policy
+	default:
+		r.queuePolicy = "drop"
+	}
+	if sampleRate > 0 && sampleRate <= 1 {
+		r.sampleRate = sampleRate
+	}
 }
 
 func (r *Runner) Start(ctx context.Context) error {
@@ -71,7 +96,12 @@ func (r *Runner) Start(ctx context.Context) error {
 
 func (r *Runner) Close() error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	if r.closing {
+		r.mu.Unlock()
+		r.connWG.Wait()
+		return nil
+	}
+	r.closing = true
 
 	var closeErr error
 	for id, ln := range r.listeners {
@@ -80,6 +110,15 @@ func (r *Runner) Close() error {
 		}
 		delete(r.listeners, id)
 	}
+	for conn := range r.activeConns {
+		if err := conn.Close(); err != nil && closeErr == nil {
+			closeErr = err
+		}
+		delete(r.activeConns, conn)
+	}
+	r.mu.Unlock()
+
+	r.connWG.Wait()
 	return closeErr
 }
 
@@ -105,11 +144,28 @@ func (r *Runner) acceptLoop(ctx context.Context, ln net.Listener, rl rule.Rule) 
 				return
 			}
 		}
+
+		r.mu.Lock()
+		if r.closing {
+			r.mu.Unlock()
+			_ = conn.Close()
+			return
+		}
+		r.activeConns[conn] = struct{}{}
+		r.connWG.Add(1)
+		r.mu.Unlock()
+
 		go r.proxyConn(ctx, conn, rl)
 	}
 }
 
 func (r *Runner) proxyConn(ctx context.Context, client net.Conn, rl rule.Rule) {
+	defer r.connWG.Done()
+	defer func() {
+		r.mu.Lock()
+		delete(r.activeConns, client)
+		r.mu.Unlock()
+	}()
 	defer client.Close()
 
 	sess := session.New(
@@ -128,7 +184,7 @@ func (r *Runner) proxyConn(ctx context.Context, client net.Conn, rl rule.Rule) {
 
 	upstream, err := r.dial(dialCtx, "tcp", rl.Forward)
 	if err != nil {
-		markErrStatus(sess, err)
+		markDialStatus(sess, err)
 		r.emit(sess.Finalize())
 		return
 	}
@@ -144,7 +200,7 @@ func (r *Runner) proxyConn(ctx context.Context, client net.Conn, rl rule.Rule) {
 	sess.AddUpBytes(upBytes)
 	sess.AddDownBytes(downBytes)
 	if copyErr != nil {
-		markErrStatus(sess, copyErr)
+		markIOStatus(sess, copyErr)
 	}
 
 	r.emit(sess.Finalize())
@@ -154,15 +210,53 @@ func (r *Runner) emit(evt session.Event) {
 	if r.out == nil {
 		return
 	}
-	r.out <- evt
+
+	switch r.queuePolicy {
+	case "drop":
+		select {
+		case r.out <- evt:
+		default:
+		}
+	case "sample":
+		select {
+		case r.out <- evt:
+			return
+		default:
+		}
+		if r.sampleRate <= 0 {
+			return
+		}
+		if r.sampleRate < 1 {
+			r.rngMu.Lock()
+			v := r.rng.Float64()
+			r.rngMu.Unlock()
+			if v > r.sampleRate {
+				return
+			}
+		}
+		select {
+		case r.out <- evt:
+		default:
+		}
+	default:
+		r.out <- evt
+	}
 }
 
-func markErrStatus(sess *session.ConnSession, err error) {
+func markDialStatus(sess *session.ConnSession, err error) {
 	if isTimeoutError(err) {
 		sess.MarkTimeout(err)
 		return
 	}
 	sess.MarkDialFail(err)
+}
+
+func markIOStatus(sess *session.ConnSession, err error) {
+	if isTimeoutError(err) {
+		sess.MarkTimeout(err)
+		return
+	}
+	sess.MarkIOErr(err)
 }
 
 func isTimeoutError(err error) bool {

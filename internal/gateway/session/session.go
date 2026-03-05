@@ -63,6 +63,13 @@ func (s *ConnSession) MarkTimeout(err error) {
 	}
 }
 
+func (s *ConnSession) MarkIOErr(err error) {
+	s.Status = "io_err"
+	if err != nil {
+		s.Error = err.Error()
+	}
+}
+
 func (s *ConnSession) Finalize() Event {
 	endTS := s.EndTS
 	if endTS == 0 {
