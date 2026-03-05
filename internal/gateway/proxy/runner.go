@@ -2,28 +2,49 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"net"
 	"strconv"
 	"sync"
+	"time"
 
 	"pipescope/internal/gateway/rule"
 	"pipescope/internal/gateway/session"
 )
 
+type dialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
+
 type Runner struct {
 	rules []rule.Rule
 	out   chan<- session.Event
+
+	dial        dialFunc
+	dialTimeout time.Duration
+	idleTimeout time.Duration
 
 	mu        sync.RWMutex
 	listeners map[string]net.Listener
 }
 
 func NewRunner(rules []rule.Rule, out chan<- session.Event) *Runner {
+	defaultDialer := &net.Dialer{}
 	return &Runner{
 		rules:     rules,
 		out:       out,
+		dial:      defaultDialer.DialContext,
 		listeners: make(map[string]net.Listener, len(rules)),
 	}
+}
+
+func (r *Runner) SetDialFunc(fn dialFunc) {
+	if fn != nil {
+		r.dial = fn
+	}
+}
+
+func (r *Runner) SetTimeouts(dialTimeout, idleTimeout time.Duration) {
+	r.dialTimeout = dialTimeout
+	r.idleTimeout = idleTimeout
 }
 
 func (r *Runner) Start(ctx context.Context) error {
@@ -98,19 +119,32 @@ func (r *Runner) proxyConn(ctx context.Context, client net.Conn, rl rule.Rule) {
 		rl.Forward,
 	)
 
-	upstream, err := (&net.Dialer{}).DialContext(ctx, "tcp", rl.Forward)
+	dialCtx := ctx
+	cancel := func() {}
+	if r.dialTimeout > 0 {
+		dialCtx, cancel = context.WithTimeout(ctx, r.dialTimeout)
+	}
+	defer cancel()
+
+	upstream, err := r.dial(dialCtx, "tcp", rl.Forward)
 	if err != nil {
-		sess.MarkDialFail(err)
+		markErrStatus(sess, err)
 		r.emit(sess.Finalize())
 		return
 	}
 	defer upstream.Close()
 
+	if r.idleTimeout > 0 {
+		deadline := time.Now().Add(r.idleTimeout)
+		_ = client.SetDeadline(deadline)
+		_ = upstream.SetDeadline(deadline)
+	}
+
 	upBytes, downBytes, copyErr := proxyDuplex(client, upstream)
 	sess.AddUpBytes(upBytes)
 	sess.AddDownBytes(downBytes)
 	if copyErr != nil {
-		sess.MarkDialFail(copyErr)
+		markErrStatus(sess, copyErr)
 	}
 
 	r.emit(sess.Finalize())
@@ -121,6 +155,25 @@ func (r *Runner) emit(evt session.Event) {
 		return
 	}
 	r.out <- evt
+}
+
+func markErrStatus(sess *session.ConnSession, err error) {
+	if isTimeoutError(err) {
+		sess.MarkTimeout(err)
+		return
+	}
+	sess.MarkDialFail(err)
+}
+
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
 }
 
 func listenPort(addr net.Addr) int {
@@ -137,4 +190,3 @@ func listenPort(addr net.Addr) int {
 	}
 	return port
 }
-
