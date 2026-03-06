@@ -13,36 +13,26 @@ make build-web sync-web
 go build ./cmd/pipescope
 ```
 
-## 3. 下载真实 geo 数据
+## 3. 内置 geo/IP 数据
+
+PipeScope 当前 release / 本地构建默认内置：
+- IPv4 `ip2region` 数据
+- AreaCity 精简省市匹配 seed
+
+启动时会把内置 IP 库与 AreaCity seed 解压到系统用户缓存目录（例如 macOS 上的 `~/Library/Caches/pipescope/embeddeddata`），因此该目录需要可写。
+
+运行时无需额外下载：
+- `data/ip2region_v4.xdb`
+- `data/ok_geo.csv`
+- AreaCity HTTP API
+
+如需更新内置数据，可执行：
 
 ```bash
-make fetch-geo-data
+make update-embedded-geo-data
 ```
 
-默认会下载并生成：
-- `data/ip2region_v4.xdb`（来源：`lionsoul2014/ip2region`）
-- `data/ok_geo.csv`（来源：`xiangyuecn/AreaCity-JsSpider-StatsGov`）
-
-## 4. 启动 AreaCity 官方高性能查询服务（推荐）
-
-- 使用项目：`https://github.com/xiangyuecn/AreaCity-Query-Geometry`
-- 启动后默认 API 地址：`http://127.0.0.1:9527`
-- 建议在该服务内使用：
-  - `Init_StoreInMemory`（更高吞吐，内存更高）
-  - 或 `Init_StoreInWkbsFile`（内存低，IO 开销更高）
-
-PipeScope 配置项：
-
-```yaml
-data:
-  areacity_api_base_url: "http://127.0.0.1:9527"
-  areacity_api_instance: 0
-```
-
-`areacity_api_base_url` 配置后，PipeScope 将优先走 AreaCity 官方 HTTP API 查询；未配置时才回退本地 CSV+SQLite 匹配。
-`assets/config.example.yaml` 默认已开启该地址，因此未启动 AreaCity API 时 PipeScope 启动会报错。
-
-## 5. 启动
+## 4. 启动
 
 ```bash
 go run ./cmd/pipescope -config assets/config.example.yaml
@@ -50,7 +40,7 @@ go run ./cmd/pipescope -config assets/config.example.yaml
 
 默认管理端地址：`http://127.0.0.1:9100`。
 
-## 6. 健康检查
+## 5. 健康检查
 
 ```bash
 curl http://127.0.0.1:9100/api/health
@@ -58,7 +48,7 @@ curl http://127.0.0.1:9100/api/health
 
 期望返回：`{"status":"ok"}`。
 
-## 7. 常用排查
+## 6. 常用排查
 
 1. 管理页无数据
 - 检查代理规则 `listen/forward` 是否可达。
@@ -66,8 +56,8 @@ curl http://127.0.0.1:9100/api/health
 - 查询 `conn_events` 是否有写入。
 
 2. 地图没有地理点位
-- 若启用了 `areacity_api_base_url`，先检查 AreaCity HTTP 服务是否可达。
-- 若未启用 HTTP API，确认 `areacity_csv_path` 文件存在并且导入成功。
+- 确认程序首次启动时有权限写入用户缓存目录。
+- 检查 SQLite 中 `dim_adcode` 是否已导入数据。
 - 若缺少 geo 数据，地图会回退为 `unknown` 聚合。
 
 3. 前端资源 404

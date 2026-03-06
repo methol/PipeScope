@@ -9,15 +9,14 @@ import (
 	"log"
 	"net"
 	nethttp "net/http"
-	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	adminhttp "pipescope/internal/admin/http"
 	adminservice "pipescope/internal/admin/service"
 	"pipescope/internal/config"
+	"pipescope/internal/embeddeddata"
 	"pipescope/internal/gateway/proxy"
 	"pipescope/internal/gateway/rule"
 	"pipescope/internal/gateway/session"
@@ -69,9 +68,17 @@ func run(ctx context.Context, cfg *config.Config) error {
 		cfg.Writer.BatchSize,
 		time.Duration(cfg.Writer.FlushInterval)*time.Millisecond,
 	)
+	cacheDir, err := embeddeddata.DefaultCacheDir()
+	if err != nil {
+		return fmt.Errorf("resolve embedded data cache dir: %w", err)
+	}
+	xdbPath, err := embeddeddata.EnsureIP2RegionXDB(cacheDir)
+	if err != nil {
+		return fmt.Errorf("prepare embedded ip2region xdb: %w", err)
+	}
 	regionSearcher, err := ip2region.NewSearcherWithConfig(ip2region.Config{
-		V4XDBPath:   cfg.Data.IP2RegionXDB,
-		V6XDBPath:   cfg.Data.IP2RegionV6XDB,
+		V4XDBPath:   xdbPath,
+		V6XDBPath:   "",
 		CachePolicy: cfg.Data.IP2RegionCachePolicy,
 		Searchers:   cfg.Data.IP2RegionSearcherPool,
 	})
@@ -145,31 +152,14 @@ func run(ctx context.Context, cfg *config.Config) error {
 }
 
 func initAreaCityMatcher(ctx context.Context, db *sql.DB, cfg *config.Config) (sqlitestore.AdcodeMatcher, error) {
-	if strings.TrimSpace(cfg.Data.AreaCityAPIBaseURL) != "" {
-		m := areacity.NewHTTPMatcher(cfg.Data.AreaCityAPIBaseURL, cfg.Data.AreaCityAPIInstance)
-		if err := m.Ping(ctx); err != nil {
-			return nil, fmt.Errorf("ping areacity api failed: %w", err)
-		}
-		return m, nil
+	cacheDir, err := embeddeddata.DefaultCacheDir()
+	if err != nil {
+		return nil, fmt.Errorf("resolve embedded data cache dir: %w", err)
 	}
-
-	if err := loadAreaCityData(ctx, db, cfg.Data.AreaCityCSVPath); err != nil {
+	if err := embeddeddata.EnsureAreaCitySeed(ctx, db, cacheDir); err != nil {
 		return nil, err
 	}
 	return areacity.NewMatcher(db), nil
-}
-
-func loadAreaCityData(ctx context.Context, db *sql.DB, csvPath string) error {
-	if csvPath == "" {
-		return nil
-	}
-	if _, err := os.Stat(csvPath); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	return areacity.NewImporter(db).ImportCSV(ctx, csvPath)
 }
 
 func newAdminHandler(db *sql.DB) nethttp.Handler {

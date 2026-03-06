@@ -17,6 +17,7 @@ func TestInitSchemaCreatesTables(t *testing.T) {
 	}
 	requireTable(t, db, "conn_events")
 	requireTable(t, db, "dim_adcode")
+	requireTable(t, db, "app_meta")
 }
 
 func openTempDB(t *testing.T) *sql.DB {

@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	nethttp "net/http"
 	"net"
+	nethttp "net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,8 +29,6 @@ func TestE2EForwardRecordAndQuery(t *testing.T) {
 	cfg := fmt.Sprintf(`
 data:
   sqlite_path: %q
-  ip2region_xdb_path: ""
-  areacity_csv_path: ""
 proxy_rules:
   - id: "e2e-rule"
     listen: "127.0.0.1:%d"
@@ -188,4 +186,3 @@ func repoRoot(t *testing.T) string {
 	}
 	return filepath.Clean(filepath.Join(dir, "..", ".."))
 }
-

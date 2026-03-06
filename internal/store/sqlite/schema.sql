@@ -41,3 +41,8 @@ CREATE TABLE IF NOT EXISTS dim_adcode (
 
 CREATE INDEX IF NOT EXISTS idx_dim_adcode_norm_pc ON dim_adcode(normalized_province, normalized_city);
 
+CREATE TABLE IF NOT EXISTS app_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT ''
+);
+

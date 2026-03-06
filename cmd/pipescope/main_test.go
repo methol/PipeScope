@@ -9,8 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	sqlitestore "pipescope/internal/store/sqlite"
 	_ "modernc.org/sqlite"
+	"pipescope/internal/config"
+	sqlitestore "pipescope/internal/store/sqlite"
 )
 
 func TestServeAdminIndex(t *testing.T) {
@@ -33,6 +34,29 @@ func TestServeAdminIndex(t *testing.T) {
 	}
 }
 
+func TestInitAreaCityMatcherUsesEmbeddedSeed(t *testing.T) {
+	db := openTempDB(t)
+	store := sqlitestore.New(db)
+	if err := store.InitSchema(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{}
+	matcher, err := initAreaCityMatcher(context.Background(), db, cfg)
+	if err != nil {
+		t.Fatalf("init matcher: %v", err)
+	}
+	if matcher == nil {
+		t.Fatalf("expected matcher")
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM dim_adcode`).Scan(&count); err != nil {
+		t.Fatalf("count dim_adcode: %v", err)
+	}
+	if count == 0 {
+		t.Fatalf("expected embedded dim_adcode rows")
+	}
+}
+
 func openTempDB(t *testing.T) *sql.DB {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "pipescope-main-test.db")
@@ -43,4 +67,3 @@ func openTempDB(t *testing.T) *sql.DB {
 	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
-

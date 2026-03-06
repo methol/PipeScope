@@ -1,12 +1,7 @@
 data:
   sqlite_path: "./data/pipescope.db"
-  ip2region_xdb_path: "./data/ip2region_v4.xdb"
-  ip2region_v6_xdb_path: ""
   ip2region_cache_policy: "vindex"
   ip2region_searchers: 20
-  areacity_csv_path: "./data/ok_geo.csv"
-  areacity_api_base_url: ""
-  areacity_api_instance: 0
 
 writer:
   queue_size: 1024
