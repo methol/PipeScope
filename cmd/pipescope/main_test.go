@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
 	"pipescope/internal/config"
@@ -54,6 +55,45 @@ func TestInitAreaCityMatcherUsesEmbeddedSeed(t *testing.T) {
 	}
 	if count == 0 {
 		t.Fatalf("expected embedded dim_adcode rows")
+	}
+}
+
+func TestOpenSQLiteConfiguresSingleConnectionPool(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "pipescope-single-conn.db")
+	db, err := openSQLite(dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	if max := db.Stats().MaxOpenConnections; max != 1 {
+		t.Fatalf("MaxOpenConnections=%d want=1", max)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("get conn: %v", err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, `BEGIN EXCLUSIVE`); err != nil {
+		t.Fatalf("begin exclusive: %v", err)
+	}
+	defer func() {
+		_, _ = conn.ExecContext(context.Background(), `ROLLBACK`)
+	}()
+
+	resultCh := make(chan error, 1)
+	go func() {
+		var count int
+		resultCh <- db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM sqlite_master`).Scan(&count)
+	}()
+
+	select {
+	case err := <-resultCh:
+		t.Fatalf("expected query to wait for shared connection, got %v", err)
+	case <-time.After(100 * time.Millisecond):
 	}
 }
 

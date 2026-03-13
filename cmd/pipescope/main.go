@@ -45,7 +45,7 @@ func main() {
 }
 
 func run(ctx context.Context, cfg *config.Config) error {
-	db, err := sql.Open("sqlite", cfg.Data.SQLitePath)
+	db, err := openSQLite(cfg.Data.SQLitePath)
 	if err != nil {
 		return err
 	}
@@ -149,6 +149,16 @@ func run(ctx context.Context, cfg *config.Config) error {
 		_ = <-writerErrCh
 		return err
 	}
+}
+
+func openSQLite(path string) (*sql.DB, error) {
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	return db, nil
 }
 
 func initAreaCityMatcher(ctx context.Context, db *sql.DB, cfg *config.Config) (sqlitestore.AdcodeMatcher, error) {
