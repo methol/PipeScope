@@ -6,9 +6,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	nethttp "net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -27,8 +29,12 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+var configPath = flag.String("config", "assets/config.example.yaml", "path to config yaml")
+
 func main() {
-	configPath := flag.String("config", "assets/config.example.yaml", "path to config yaml")
+	flag.Usage = func() {
+		writeUsage(os.Stderr)
+	}
 	flag.Parse()
 
 	cfg, err := config.Load(*configPath)
@@ -189,4 +195,13 @@ func convertRules(src []config.ProxyRule) []rule.Rule {
 		})
 	}
 	return out
+}
+
+func writeUsage(w io.Writer) {
+	_, _ = fmt.Fprintf(w, "PipeScope\n\nUsage:\n  %s -config %s\n\nFlags:\n", os.Args[0], "assets/config.example.yaml")
+	fs := flag.CommandLine
+	prev := fs.Output()
+	fs.SetOutput(w)
+	defer fs.SetOutput(prev)
+	fs.PrintDefaults()
 }

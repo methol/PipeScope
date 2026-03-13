@@ -70,8 +70,8 @@ func (h *handlers) handleSessions(w nethttp.ResponseWriter, r *nethttp.Request) 
 	points, err := h.svc.Sessions(r.Context(), service.SessionsQuery{
 		Window: parseWindow(r.URL.Query().Get("window"), 15*time.Minute),
 		RuleID: r.URL.Query().Get("rule_id"),
-		Limit:  parseInt(r.URL.Query().Get("limit"), 100),
-		Offset: parseInt(r.URL.Query().Get("offset"), 0),
+		Limit:  parseBoundedInt(r.URL.Query().Get("limit"), 100, 1, 500),
+		Offset: parseBoundedInt(r.URL.Query().Get("offset"), 0, 0, 1000000),
 	})
 	if err != nil {
 		writeError(w, nethttp.StatusInternalServerError, err)
@@ -110,13 +110,19 @@ func parseMetric(raw string) string {
 	return service.MetricConn
 }
 
-func parseInt(raw string, fallback int) int {
+func parseBoundedInt(raw string, fallback int, min int, max int) int {
 	if raw == "" {
 		return fallback
 	}
 	n, err := strconv.Atoi(raw)
 	if err != nil {
 		return fallback
+	}
+	if n < min {
+		return fallback
+	}
+	if max > 0 && n > max {
+		return max
 	}
 	return n
 }
