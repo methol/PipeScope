@@ -142,3 +142,40 @@ func TestLoadConfigSupportsTimeoutAlias(t *testing.T) {
 		t.Fatalf("IdleMS=%d want=4000", cfg.Timeouts.IdleMS)
 	}
 }
+
+func TestLoadConfigSupportsTimeoutMergeKey(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/config.yaml"
+	content := []byte("data:\n  sqlite_path: ./data/test.db\nproxy_rules: []\nwriter: {}\nbase: &t\n  dial_ms: 3000\ntimeouts:\n  <<: *t\n  idle_ms: 4000\nadmin: {}\n")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Timeouts.DialMS != 3000 {
+		t.Fatalf("DialMS=%d want=3000", cfg.Timeouts.DialMS)
+	}
+	if cfg.Timeouts.IdleMS != 4000 {
+		t.Fatalf("IdleMS=%d want=4000", cfg.Timeouts.IdleMS)
+	}
+}
+
+func TestLoadConfigPreservesAdminPortZero(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/config.yaml"
+	content := []byte("data:\n  sqlite_path: ./data/test.db\nproxy_rules: []\nwriter: {}\nadmin:\n  host: 127.0.0.1\n  port: 0\n")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Admin.Port != 0 {
+		t.Fatalf("Port=%d want=0", cfg.Admin.Port)
+	}
+}
