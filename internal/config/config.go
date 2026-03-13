@@ -50,46 +50,36 @@ type TimeoutsConfig struct {
 }
 
 func (t *TimeoutsConfig) UnmarshalYAML(value *yaml.Node) error {
-	// Accept empty/missing map
-	if value == nil || value.Kind == 0 {
+	// Accept empty/missing
+	if value == nil || value.Kind == 0 || value.Tag == "!!null" {
 		return nil
 	}
-	// Handle alias nodes and non-mapping nodes.
-	// - alias: decode into a plain struct and mark fields as set.
-	// - null/empty: treat as omitted (leave set flags false so applyDefaults can apply).
-	// - other scalars/sequences: reject as invalid.
+	// Follow YAML alias nodes so we preserve per-field presence and allow merge keys.
+	if value.Kind == yaml.AliasNode {
+		if value.Alias == nil {
+			return fmt.Errorf("invalid timeouts alias")
+		}
+		return t.UnmarshalYAML(value.Alias)
+	}
 	if value.Kind != yaml.MappingNode {
-		// YAML alias node: follow the target so we preserve per-field presence.
-		if value.Kind == yaml.AliasNode {
-			if value.Alias == nil {
-				return fmt.Errorf("invalid timeouts alias")
-			}
-			return t.UnmarshalYAML(value.Alias)
-		}
-
-		// explicit null (e.g. `timeouts: null`) should behave like omitted
-		if value.Tag == "!!null" {
-			return nil
-		}
-
 		return fmt.Errorf("invalid timeouts section: expected mapping")
 	}
 
-	for i := 0; i < len(value.Content)-1; i += 2 {
-		k := value.Content[i]
-		v := value.Content[i+1]
-		switch k.Value {
-		case "dial_ms":
-			t.dialSet = true
-			if err := v.Decode(&t.DialMS); err != nil {
-				return fmt.Errorf("invalid dial_ms: %w", err)
-			}
-		case "idle_ms":
-			t.idleSet = true
-			if err := v.Decode(&t.IdleMS); err != nil {
-				return fmt.Errorf("invalid idle_ms: %w", err)
-			}
-		}
+	// Let yaml.v3 resolve merge keys (<<: *anchor) while decoding.
+	var aux struct {
+		DialMS *int `yaml:"dial_ms"`
+		IdleMS *int `yaml:"idle_ms"`
+	}
+	if err := value.Decode(&aux); err != nil {
+		return err
+	}
+	if aux.DialMS != nil {
+		t.DialMS = *aux.DialMS
+		t.dialSet = true
+	}
+	if aux.IdleMS != nil {
+		t.IdleMS = *aux.IdleMS
+		t.idleSet = true
 	}
 	return nil
 }
@@ -97,6 +87,42 @@ func (t *TimeoutsConfig) UnmarshalYAML(value *yaml.Node) error {
 type AdminConfig struct {
 	Host string `yaml:"host"`
 	Port int    `yaml:"port"`
+
+	// presence flags: used to distinguish omitted fields vs explicitly set to 0
+	hostSet bool `yaml:"-"`
+	portSet bool `yaml:"-"`
+}
+
+func (a *AdminConfig) UnmarshalYAML(value *yaml.Node) error {
+	if value == nil || value.Kind == 0 || value.Tag == "!!null" {
+		return nil
+	}
+	if value.Kind == yaml.AliasNode {
+		if value.Alias == nil {
+			return fmt.Errorf("invalid admin alias")
+		}
+		return a.UnmarshalYAML(value.Alias)
+	}
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("invalid admin section: expected mapping")
+	}
+
+	var aux struct {
+		Host *string `yaml:"host"`
+		Port *int    `yaml:"port"`
+	}
+	if err := value.Decode(&aux); err != nil {
+		return err
+	}
+	if aux.Host != nil {
+		a.Host = *aux.Host
+		a.hostSet = true
+	}
+	if aux.Port != nil {
+		a.Port = *aux.Port
+		a.portSet = true
+	}
+	return nil
 }
 
 const (
@@ -155,7 +181,8 @@ func applyDefaults(cfg *Config) {
 	if cfg.Admin.Host == "" {
 		cfg.Admin.Host = DefaultAdminHost
 	}
-	if cfg.Admin.Port <= 0 {
+	// Preserve explicit admin.port: 0 (ephemeral port). Default only when omitted.
+	if !cfg.Admin.portSet {
 		cfg.Admin.Port = DefaultAdminPort
 	}
 }
