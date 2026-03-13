@@ -50,8 +50,19 @@ func (i *Importer) ImportCSV(ctx context.Context, csvPath string) error {
 		return err
 	}
 	defer f.Close()
+	return i.ImportCSVReader(ctx, f)
+}
 
-	reader := csv.NewReader(f)
+func (i *Importer) ImportCSVReader(ctx context.Context, r io.Reader) error {
+	return i.importCSV(ctx, r, false)
+}
+
+func (i *Importer) ReplaceCSVReader(ctx context.Context, r io.Reader) error {
+	return i.importCSV(ctx, r, true)
+}
+
+func (i *Importer) importCSV(ctx context.Context, r io.Reader, replace bool) error {
+	reader := csv.NewReader(r)
 	reader.TrimLeadingSpace = true
 	reader.ReuseRecord = true
 
@@ -67,6 +78,12 @@ func (i *Importer) ImportCSV(ctx context.Context, csvPath string) error {
 	tx, err := i.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
+	}
+	if replace {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM dim_adcode`); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
 	}
 	stmt, err := tx.PrepareContext(ctx, `
 INSERT INTO dim_adcode(adcode, province, city, district, lat, lng, normalized_province, normalized_city)

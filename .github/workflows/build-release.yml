@@ -51,6 +51,12 @@ jobs:
       - name: Build web and sync embedded static assets
         run: make build-web sync-web
 
+      - name: Verify embedded geo data assets exist
+        run: |
+          test -f internal/embeddeddata/assets/ip2region_v4.xdb.gz
+          test -f internal/embeddeddata/assets/areacity_seed.csv.gz
+          test -f internal/embeddeddata/assets/manifest.json
+
       - name: Build binary
         env:
           GOOS: ${{ matrix.goos }}

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -58,6 +59,9 @@ func Load(path string) (*Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(b, &cfg); err != nil {
 		return nil, err
+	}
+	if cfg.Data.IP2RegionXDB != "" || cfg.Data.IP2RegionV6XDB != "" || cfg.Data.AreaCityCSVPath != "" || cfg.Data.AreaCityAPIBaseURL != "" || cfg.Data.AreaCityAPIInstance != 0 {
+		return nil, fmt.Errorf("legacy external geo/ip config is no longer supported; use embedded data assets")
 	}
 
 	return &cfg, nil

@@ -18,3 +18,9 @@ func TestLoadConfig(t *testing.T) {
 	}
 }
 
+func TestLoadConfigRejectsLegacyGeoFields(t *testing.T) {
+	_, err := Load("testdata/config_legacy_geo.yaml")
+	if err == nil {
+		t.Fatalf("expected legacy geo config to be rejected")
+	}
+}
