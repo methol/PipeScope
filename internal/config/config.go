@@ -47,6 +47,10 @@ type TimeoutsConfig struct {
 	// presence flags: used to distinguish omitted fields vs explicitly set to 0
 	dialSet bool `yaml:"-"`
 	idleSet bool `yaml:"-"`
+
+	// sectionSet indicates whether the `timeouts` section is present in YAML at all.
+	// If absent, we keep timeouts disabled (0) for backward compatibility.
+	sectionSet bool `yaml:"-"`
 }
 
 func (t *TimeoutsConfig) UnmarshalYAML(value *yaml.Node) error {
@@ -54,6 +58,9 @@ func (t *TimeoutsConfig) UnmarshalYAML(value *yaml.Node) error {
 	if value == nil || value.Kind == 0 || value.Tag == "!!null" {
 		return nil
 	}
+
+	// Section exists in YAML (not null); enable defaults for omitted fields.
+	t.sectionSet = true
 	// Follow YAML alias nodes so we preserve per-field presence and allow merge keys.
 	if value.Kind == yaml.AliasNode {
 		if value.Alias == nil {
@@ -171,12 +178,15 @@ func applyDefaults(cfg *Config) {
 	if cfg.Writer.SampleRate <= 0 || cfg.Writer.SampleRate > 1 {
 		cfg.Writer.SampleRate = DefaultWriterSampleRate
 	}
-	// If timeout fields are omitted, apply defaults. If explicitly set to 0, treat as 'disable timeout'.
-	if !cfg.Timeouts.dialSet {
-		cfg.Timeouts.DialMS = DefaultDialTimeoutMS
-	}
-	if !cfg.Timeouts.idleSet {
-		cfg.Timeouts.IdleMS = DefaultIdleTimeoutMS
+	// Backward-compat: if `timeouts` section is omitted entirely, keep timeouts disabled (0).
+	// If the section exists, apply defaults only for omitted fields; explicit 0 means "disable".
+	if cfg.Timeouts.sectionSet {
+		if !cfg.Timeouts.dialSet {
+			cfg.Timeouts.DialMS = DefaultDialTimeoutMS
+		}
+		if !cfg.Timeouts.idleSet {
+			cfg.Timeouts.IdleMS = DefaultIdleTimeoutMS
+		}
 	}
 	// Preserve explicit admin.host: "" (bind all interfaces). Default only when omitted.
 	if !cfg.Admin.hostSet {
