@@ -54,10 +54,16 @@ func (t *TimeoutsConfig) UnmarshalYAML(value *yaml.Node) error {
 	if value == nil || value.Kind == 0 {
 		return nil
 	}
+	// Handle alias nodes and non-mapping nodes by decoding into a plain struct
+	// and marking both fields as set (since the struct was populated).
 	if value.Kind != yaml.MappingNode {
-		// fallback to default decoding
 		type plain TimeoutsConfig
-		return value.Decode((*plain)(t))
+		if err := value.Decode((*plain)(t)); err != nil {
+			return err
+		}
+		t.dialSet = true
+		t.idleSet = true
+		return nil
 	}
 	for i := 0; i < len(value.Content)-1; i += 2 {
 		k := value.Content[i]
@@ -65,10 +71,14 @@ func (t *TimeoutsConfig) UnmarshalYAML(value *yaml.Node) error {
 		switch k.Value {
 		case "dial_ms":
 			t.dialSet = true
-			_ = v.Decode(&t.DialMS)
+			if err := v.Decode(&t.DialMS); err != nil {
+				return fmt.Errorf("invalid dial_ms: %w", err)
+			}
 		case "idle_ms":
 			t.idleSet = true
-			_ = v.Decode(&t.IdleMS)
+			if err := v.Decode(&t.IdleMS); err != nil {
+				return fmt.Errorf("invalid idle_ms: %w", err)
+			}
 		}
 	}
 	return nil
