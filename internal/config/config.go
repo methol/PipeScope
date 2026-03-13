@@ -178,7 +178,8 @@ func applyDefaults(cfg *Config) {
 	if !cfg.Timeouts.idleSet {
 		cfg.Timeouts.IdleMS = DefaultIdleTimeoutMS
 	}
-	if cfg.Admin.Host == "" {
+	// Preserve explicit admin.host: "" (bind all interfaces). Default only when omitted.
+	if !cfg.Admin.hostSet {
 		cfg.Admin.Host = DefaultAdminHost
 	}
 	// Preserve explicit admin.port: 0 (ephemeral port). Default only when omitted.
