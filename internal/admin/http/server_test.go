@@ -95,3 +95,21 @@ func (fakeService) ProvinceMap(context.Context, service.ProvinceQuery) ([]servic
 	return []service.MapPoint{}, nil
 }
 
+func TestSessionsEndpointClampsOversizedOffset(t *testing.T) {
+	svc := &capturingService{}
+	srv := NewServer(svc)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(nethttp.MethodGet, "/api/sessions?limit=5&offset=999999999", nil)
+
+	srv.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != nethttp.StatusOK {
+		t.Fatalf("code=%d", rr.Code)
+	}
+	if svc.sessionsQuery.Limit != 5 {
+		t.Fatalf("Limit=%d want=5", svc.sessionsQuery.Limit)
+	}
+	if svc.sessionsQuery.Offset != 1000000 {
+		t.Fatalf("Offset=%d want=1000000", svc.sessionsQuery.Offset)
+	}
+}

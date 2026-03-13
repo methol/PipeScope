@@ -198,5 +198,9 @@ func convertRules(src []config.ProxyRule) []rule.Rule {
 
 func writeUsage(w io.Writer) {
 	_, _ = fmt.Fprintf(w, "PipeScope\n\nUsage:\n  %s -config %s\n\nFlags:\n", os.Args[0], "assets/config.example.yaml")
-	flag.PrintDefaults()
+	fs := flag.CommandLine
+	prev := fs.Output()
+	fs.SetOutput(w)
+	defer fs.SetOutput(prev)
+	fs.PrintDefaults()
 }

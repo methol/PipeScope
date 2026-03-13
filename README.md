@@ -174,7 +174,7 @@ writer:
 先检查：
 
 ```bash
-go run ./cmd/pipescope -config assets/config.example.yaml -h
+go run ./cmd/pipescope -config assets/config.example.yaml
 ```
 
 以及：
