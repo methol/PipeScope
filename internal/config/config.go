@@ -59,15 +59,12 @@ func (t *TimeoutsConfig) UnmarshalYAML(value *yaml.Node) error {
 	// - null/empty: treat as omitted (leave set flags false so applyDefaults can apply).
 	// - other scalars/sequences: reject as invalid.
 	if value.Kind != yaml.MappingNode {
-		// YAML alias node
+		// YAML alias node: follow the target so we preserve per-field presence.
 		if value.Kind == yaml.AliasNode {
-			type plain TimeoutsConfig
-			if err := value.Decode((*plain)(t)); err != nil {
-				return err
+			if value.Alias == nil {
+				return fmt.Errorf("invalid timeouts alias")
 			}
-			t.dialSet = true
-			t.idleSet = true
-			return nil
+			return t.UnmarshalYAML(value.Alias)
 		}
 
 		// explicit null (e.g. `timeouts: null`) should behave like omitted

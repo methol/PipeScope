@@ -29,11 +29,12 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+var configPath = flag.String("config", "assets/config.example.yaml", "path to config yaml")
+
 func main() {
 	flag.Usage = func() {
 		writeUsage(os.Stderr)
 	}
-	configPath := flag.String("config", "assets/config.example.yaml", "path to config yaml")
 	flag.Parse()
 
 	cfg, err := config.Load(*configPath)
