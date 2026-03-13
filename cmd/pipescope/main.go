@@ -151,6 +151,8 @@ func run(ctx context.Context, cfg *config.Config) error {
 	}
 }
 
+// PipeScope runtime intentionally serializes SQLite access to avoid SQLITE_BUSY
+// between the background writer and admin read queries on separate pooled connections.
 func openSQLite(path string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
