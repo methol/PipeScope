@@ -69,3 +69,23 @@ func TestLoadConfigAppliesDefaults(t *testing.T) {
 		t.Fatalf("Port=%d want=9100", cfg.Admin.Port)
 	}
 }
+
+func TestLoadConfigPreservesZeroTimeouts(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/config.yaml"
+	content := []byte("data:\n  sqlite_path: ./data/test.db\nproxy_rules: []\nwriter: {}\ntimeouts:\n  dial_ms: 0\n  idle_ms: 0\nadmin: {}\n")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Timeouts.DialMS != 0 {
+		t.Fatalf("DialMS=%d want=0", cfg.Timeouts.DialMS)
+	}
+	if cfg.Timeouts.IdleMS != 0 {
+		t.Fatalf("IdleMS=%d want=0", cfg.Timeouts.IdleMS)
+	}
+}

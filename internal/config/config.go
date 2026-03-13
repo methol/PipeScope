@@ -43,6 +43,35 @@ type WriterConfig struct {
 type TimeoutsConfig struct {
 	DialMS int `yaml:"dial_ms"`
 	IdleMS int `yaml:"idle_ms"`
+
+	// presence flags: used to distinguish omitted fields vs explicitly set to 0
+	dialSet bool `yaml:"-"`
+	idleSet bool `yaml:"-"`
+}
+
+func (t *TimeoutsConfig) UnmarshalYAML(value *yaml.Node) error {
+	// Accept empty/missing map
+	if value == nil || value.Kind == 0 {
+		return nil
+	}
+	if value.Kind != yaml.MappingNode {
+		// fallback to default decoding
+		type plain TimeoutsConfig
+		return value.Decode((*plain)(t))
+	}
+	for i := 0; i < len(value.Content)-1; i += 2 {
+		k := value.Content[i]
+		v := value.Content[i+1]
+		switch k.Value {
+		case "dial_ms":
+			t.dialSet = true
+			_ = v.Decode(&t.DialMS)
+		case "idle_ms":
+			t.idleSet = true
+			_ = v.Decode(&t.IdleMS)
+		}
+	}
+	return nil
 }
 
 type AdminConfig struct {
@@ -96,10 +125,11 @@ func applyDefaults(cfg *Config) {
 	if cfg.Writer.SampleRate <= 0 || cfg.Writer.SampleRate > 1 {
 		cfg.Writer.SampleRate = DefaultWriterSampleRate
 	}
-	if cfg.Timeouts.DialMS <= 0 {
+	// If timeout fields are omitted, apply defaults. If explicitly set to 0, treat as 'disable timeout'.
+	if !cfg.Timeouts.dialSet {
 		cfg.Timeouts.DialMS = DefaultDialTimeoutMS
 	}
-	if cfg.Timeouts.IdleMS <= 0 {
+	if !cfg.Timeouts.idleSet {
 		cfg.Timeouts.IdleMS = DefaultIdleTimeoutMS
 	}
 	if cfg.Admin.Host == "" {
