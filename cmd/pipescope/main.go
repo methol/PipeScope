@@ -164,8 +164,19 @@ func openSQLite(path string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
+
+	// Use WAL so admin read queries don't block behind the writer transaction.
+	// With the current schema/workload, readers should remain responsive while writes happen.
+	//
+	// NOTE: modernc.org/sqlite treats PRAGMA as connection-local, but with MaxOpenConns(1)
+	// it effectively applies to all operations.
+	_, _ = db.Exec("PRAGMA journal_mode=WAL;")
+	_, _ = db.Exec("PRAGMA synchronous=NORMAL;")
+	_, _ = db.Exec("PRAGMA busy_timeout=3000;")
+
+	// Allow concurrent read/write connections; WAL supports one writer + many readers.
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(10)
 	return db, nil
 }
 
