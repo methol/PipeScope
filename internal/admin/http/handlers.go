@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	nethttp "net/http"
 	"strconv"
 	"time"
@@ -150,7 +151,7 @@ func writeQueryError(w nethttp.ResponseWriter, err error) {
 		writeJSON(w, nethttp.StatusInternalServerError, map[string]any{"error": "unknown error"})
 		return
 	}
-	if err == context.DeadlineExceeded || err == context.Canceled {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		writeJSON(w, nethttp.StatusGatewayTimeout, map[string]any{"error": err.Error()})
 		return
 	}

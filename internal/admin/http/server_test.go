@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"fmt"
 	nethttp "net/http"
 	"net/http/httptest"
 	"testing"
@@ -97,6 +98,8 @@ func (fakeService) ProvinceMap(context.Context, service.ProvinceQuery) ([]servic
 
 type timeoutService struct{}
 
+type wrappedTimeoutService struct{}
+
 func (timeoutService) ChinaMap(ctx context.Context, q service.MapQuery) ([]service.MapPoint, error) {
 	<-ctx.Done()
 	return nil, ctx.Err()
@@ -122,6 +125,31 @@ func (timeoutService) ProvinceMap(ctx context.Context, q service.ProvinceQuery) 
 	return nil, ctx.Err()
 }
 
+func (wrappedTimeoutService) ChinaMap(ctx context.Context, q service.MapQuery) ([]service.MapPoint, error) {
+	<-ctx.Done()
+	return nil, fmt.Errorf("wrapped: %w", ctx.Err())
+}
+
+func (wrappedTimeoutService) Rules(ctx context.Context, q service.RulesQuery) ([]service.RulePoint, error) {
+	<-ctx.Done()
+	return nil, fmt.Errorf("wrapped: %w", ctx.Err())
+}
+
+func (wrappedTimeoutService) Sessions(ctx context.Context, q service.SessionsQuery) ([]service.SessionItem, error) {
+	<-ctx.Done()
+	return nil, fmt.Errorf("wrapped: %w", ctx.Err())
+}
+
+func (wrappedTimeoutService) Overview(ctx context.Context, window time.Duration) (service.Overview, error) {
+	<-ctx.Done()
+	return service.Overview{}, fmt.Errorf("wrapped: %w", ctx.Err())
+}
+
+func (wrappedTimeoutService) ProvinceMap(ctx context.Context, q service.ProvinceQuery) ([]service.MapPoint, error) {
+	<-ctx.Done()
+	return nil, fmt.Errorf("wrapped: %w", ctx.Err())
+}
+
 func TestSessionsEndpointClampsOversizedOffset(t *testing.T) {
 	svc := &capturingService{}
 	srv := NewServer(svc, 50*time.Millisecond)
@@ -143,6 +171,18 @@ func TestSessionsEndpointClampsOversizedOffset(t *testing.T) {
 
 func TestRulesEndpointTimesOutSlowService(t *testing.T) {
 	srv := NewServer(timeoutService{}, 10*time.Millisecond)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(nethttp.MethodGet, "/api/rules", nil)
+
+	srv.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != nethttp.StatusGatewayTimeout {
+		t.Fatalf("code=%d want=%d", rr.Code, nethttp.StatusGatewayTimeout)
+	}
+}
+
+func TestRulesEndpointTimesOutWrappedServiceError(t *testing.T) {
+	srv := NewServer(wrappedTimeoutService{}, 10*time.Millisecond)
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(nethttp.MethodGet, "/api/rules", nil)
 
