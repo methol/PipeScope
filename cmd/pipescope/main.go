@@ -164,8 +164,24 @@ func openSQLite(path string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
+
+	// Improve runtime observability
+	db.SetConnMaxLifetime(0)
+
+	// Enable WAL so admin read queries don't block behind the writer transaction.
+	if _, err := db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+		log.Printf("sqlite pragma journal_mode=WAL failed: %v", err)
+	}
+	if _, err := db.Exec("PRAGMA synchronous=NORMAL;"); err != nil {
+		log.Printf("sqlite pragma synchronous=NORMAL failed: %v", err)
+	}
+	if _, err := db.Exec("PRAGMA busy_timeout=3000;"); err != nil {
+		log.Printf("sqlite pragma busy_timeout failed: %v", err)
+	}
+
+	// Allow concurrent read/write connections; WAL supports one writer + many readers.
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(10)
 	return db, nil
 }
 

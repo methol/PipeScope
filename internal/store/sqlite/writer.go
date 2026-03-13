@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"log"
 	"net"
 	"strconv"
 	"time"
@@ -40,6 +41,7 @@ func (w *Writer) SetGeoEnricher(region RegionLookup, matcher AdcodeMatcher) {
 }
 
 func (w *Writer) Run(ctx context.Context) error {
+	log.Printf("writer start batch=%d flush=%s", w.batchSize, w.flushInterval)
 	ticker := time.NewTicker(w.flushInterval)
 	defer ticker.Stop()
 
@@ -160,7 +162,11 @@ INSERT INTO conn_events(
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		log.Printf("writer commit failed: %v", err)
+		return err
+	}
+	return nil
 }
 
 func extractHost(addr string) string {

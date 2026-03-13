@@ -2,13 +2,15 @@ package http
 
 import (
 	"io/fs"
+	"log"
 	nethttp "net/http"
 	"path"
 	"strings"
+	"time"
 )
 
 type Server struct {
-	mux *nethttp.ServeMux
+	mux nethttp.Handler
 }
 
 func NewServer(svc QueryService) *Server {
@@ -23,7 +25,18 @@ func NewServer(svc QueryService) *Server {
 	mux.HandleFunc("/api/overview", h.handleOverview)
 	mux.Handle("/", staticHandler())
 
-	return &Server{mux: mux}
+	return &Server{mux: loggingMiddleware(mux)}
+}
+
+func loggingMiddleware(next nethttp.Handler) nethttp.Handler {
+	return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		start := time.Now()
+		log.Printf("admin http start method=%s path=%s remote=%s", r.Method, r.URL.Path, r.RemoteAddr)
+		defer func() {
+			log.Printf("admin http done method=%s path=%s dur=%s", r.Method, r.URL.Path, time.Since(start))
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) Handler() nethttp.Handler {
