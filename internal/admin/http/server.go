@@ -13,9 +13,9 @@ type Server struct {
 	mux nethttp.Handler
 }
 
-func NewServer(svc QueryService) *Server {
+func NewServer(svc QueryService, timeout time.Duration) *Server {
 	mux := nethttp.NewServeMux()
-	h := newHandlers(svc)
+	h := newHandlers(svc, timeout)
 
 	mux.HandleFunc("/api/health", h.handleHealth)
 	mux.HandleFunc("/api/map/china", h.handleMapChina)

@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"pipescope/internal/gateway/session"
 	"pipescope/internal/geo/areacity"
 	"pipescope/internal/geo/ip2region"
-	"pipescope/internal/gateway/session"
 )
 
 func TestWriterBatchInsert(t *testing.T) {
@@ -70,6 +70,13 @@ func TestWriterEnrichesGeoFields(t *testing.T) {
 	if err := s.InitSchema(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	seedDimAdcode(t, db, areacity.DimAdcode{
+		Adcode:   "440300",
+		Province: "广东",
+		City:     "深圳",
+		Lat:      22.5431,
+		Lng:      114.0579,
+	})
 
 	in := make(chan session.Event, 1)
 	w := NewWriter(db, in, 1, time.Hour)
@@ -80,14 +87,7 @@ func TestWriterEnrichesGeoFields(t *testing.T) {
 				City:     "深圳",
 			},
 		},
-		fakeMatcher{
-			dim: areacity.DimAdcode{
-				Adcode: "440300",
-				Lat:    22.5431,
-				Lng:    114.0579,
-			},
-			ok: true,
-		},
+		areacity.NewMatcher(db),
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -151,19 +151,6 @@ func (f fakeRegionLookup) Lookup(_ string) (ip2region.Region, error) {
 	return f.region, nil
 }
 
-type fakeMatcher struct {
-	dim areacity.DimAdcode
-	ok  bool
-	err error
-}
-
-func (f fakeMatcher) Match(_, _ string) (areacity.DimAdcode, bool, error) {
-	if f.err != nil {
-		return areacity.DimAdcode{}, false, f.err
-	}
-	return f.dim, f.ok, nil
-}
-
 func TestWriterFlushesBatchOnContextCancel(t *testing.T) {
 	db := openTempDB(t)
 	s := New(db)
@@ -221,7 +208,7 @@ func TestWriterEnrichSkipsOnLookupError(t *testing.T) {
 	w := NewWriter(db, in, 1, time.Hour)
 	w.SetGeoEnricher(
 		fakeRegionLookup{err: errors.New("lookup failed")},
-		fakeMatcher{},
+		areacity.NewMatcher(db),
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -258,5 +245,59 @@ LIMIT 1
 	}
 	if province != "" || city != "" || adcode != "" {
 		t.Fatalf("expected empty geo fields, got %q %q %q", province, city, adcode)
+	}
+}
+
+func TestWriterEnrichesGeoFieldsWithRealMatcherOnSingleConnection(t *testing.T) {
+	db := openTempDB(t)
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	s := New(db)
+	if err := s.InitSchema(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	seedDimAdcode(t, db, areacity.DimAdcode{
+		Adcode:   "440300",
+		Province: "广东",
+		City:     "深圳",
+		Lat:      22.5431,
+		Lng:      114.0579,
+	})
+
+	in := make(chan session.Event, 1)
+	w := NewWriter(db, in, 1, time.Hour)
+	w.SetGeoEnricher(
+		fakeRegionLookup{region: ip2region.Region{Province: "广东", City: "深圳"}},
+		areacity.NewMatcher(db),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- w.Run(ctx)
+	}()
+
+	in <- session.Event{
+		RuleID:     "r-geo-real",
+		ListenPort: 10001,
+		SrcAddr:    "1.1.1.1:1000",
+		DstAddr:    "2.2.2.2:80",
+		StartTS:    time.Now().UnixMilli(),
+		EndTS:      time.Now().UnixMilli(),
+		Status:     "ok",
+		UpBytes:    10,
+		DownBytes:  20,
+		TotalBytes: 30,
+	}
+	close(in)
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("writer run: %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("writer did not stop with real matcher on single connection")
 	}
 }

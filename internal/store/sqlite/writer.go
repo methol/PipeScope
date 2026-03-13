@@ -111,6 +111,24 @@ func (w *Writer) Run(ctx context.Context) error {
 }
 
 func (w *Writer) insertBatch(ctx context.Context, batch []session.Event) error {
+	type row struct {
+		evt     session.Event
+		srcIP   string
+		dstHost string
+		dstPort int
+		geo     enrichedFields
+	}
+	rows := make([]row, 0, len(batch))
+	for _, evt := range batch {
+		rows = append(rows, row{
+			evt:     evt,
+			srcIP:   extractHost(evt.SrcAddr),
+			dstHost: extractHost(evt.DstAddr),
+			dstPort: extractPort(evt.DstAddr),
+			geo:     enrichGeoFields(evt, w.region, w.matcher),
+		})
+	}
+
 	tx, err := w.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -129,33 +147,29 @@ INSERT INTO conn_events(
 	}
 	defer stmt.Close()
 
-	for _, evt := range batch {
-		srcIP := extractHost(evt.SrcAddr)
-		dstHost := extractHost(evt.DstAddr)
-		dstPort := extractPort(evt.DstAddr)
-		geo := enrichGeoFields(evt, w.region, w.matcher)
+	for _, row := range rows {
 		if _, err := stmt.ExecContext(
 			ctx,
-			evt.RuleID,
-			evt.ListenPort,
-			evt.SrcAddr,
-			srcIP,
-			evt.DstAddr,
-			dstHost,
-			dstPort,
-			evt.StartTS,
-			evt.EndTS,
-			evt.DurationMS,
-			evt.UpBytes,
-			evt.DownBytes,
-			evt.TotalBytes,
-			evt.Status,
-			evt.Error,
-			geo.Province,
-			geo.City,
-			geo.Adcode,
-			geo.Lat,
-			geo.Lng,
+			row.evt.RuleID,
+			row.evt.ListenPort,
+			row.evt.SrcAddr,
+			row.srcIP,
+			row.evt.DstAddr,
+			row.dstHost,
+			row.dstPort,
+			row.evt.StartTS,
+			row.evt.EndTS,
+			row.evt.DurationMS,
+			row.evt.UpBytes,
+			row.evt.DownBytes,
+			row.evt.TotalBytes,
+			row.evt.Status,
+			row.evt.Error,
+			row.geo.Province,
+			row.geo.City,
+			row.geo.Adcode,
+			row.geo.Lat,
+			row.geo.Lng,
 		); err != nil {
 			_ = tx.Rollback()
 			return err
