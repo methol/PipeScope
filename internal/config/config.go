@@ -54,17 +54,30 @@ func (t *TimeoutsConfig) UnmarshalYAML(value *yaml.Node) error {
 	if value == nil || value.Kind == 0 {
 		return nil
 	}
-	// Handle alias nodes and non-mapping nodes by decoding into a plain struct
-	// and marking both fields as set (since the struct was populated).
+	// Handle alias nodes and non-mapping nodes.
+	// - alias: decode into a plain struct and mark fields as set.
+	// - null/empty: treat as omitted (leave set flags false so applyDefaults can apply).
+	// - other scalars/sequences: reject as invalid.
 	if value.Kind != yaml.MappingNode {
-		type plain TimeoutsConfig
-		if err := value.Decode((*plain)(t)); err != nil {
-			return err
+		// YAML alias node
+		if value.Kind == yaml.AliasNode {
+			type plain TimeoutsConfig
+			if err := value.Decode((*plain)(t)); err != nil {
+				return err
+			}
+			t.dialSet = true
+			t.idleSet = true
+			return nil
 		}
-		t.dialSet = true
-		t.idleSet = true
-		return nil
+
+		// explicit null (e.g. `timeouts: null`) should behave like omitted
+		if value.Tag == "!!null" {
+			return nil
+		}
+
+		return fmt.Errorf("invalid timeouts section: expected mapping")
 	}
+
 	for i := 0; i < len(value.Content)-1; i += 2 {
 		k := value.Content[i]
 		v := value.Content[i+1]
