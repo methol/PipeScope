@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	_ "modernc.org/sqlite"
 	"pipescope/internal/config"
@@ -59,7 +58,7 @@ func TestInitAreaCityMatcherUsesEmbeddedSeed(t *testing.T) {
 	}
 }
 
-func TestOpenSQLiteConfiguresSingleConnectionPool(t *testing.T) {
+func TestOpenSQLiteConfiguresConnectionPool(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "pipescope-single-conn.db")
 	db, err := openSQLite(dbPath)
 	if err != nil {
@@ -67,34 +66,56 @@ func TestOpenSQLiteConfiguresSingleConnectionPool(t *testing.T) {
 	}
 	defer db.Close()
 
-	if max := db.Stats().MaxOpenConnections; max != 1 {
-		t.Fatalf("MaxOpenConnections=%d want=1", max)
+	if max := db.Stats().MaxOpenConnections; max < 2 {
+		t.Fatalf("MaxOpenConnections=%d want>=2", max)
 	}
+}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-	conn, err := db.Conn(ctx)
+func TestOpenSQLiteAppliesBusyTimeoutToEachConnection(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "pipescope-busy-timeout.db")
+	db, err := openSQLite(dbPath)
 	if err != nil {
-		t.Fatalf("get conn: %v", err)
+		t.Fatalf("open sqlite: %v", err)
 	}
-	defer conn.Close()
-	if _, err := conn.ExecContext(ctx, `BEGIN EXCLUSIVE`); err != nil {
-		t.Fatalf("begin exclusive: %v", err)
+	defer db.Close()
+
+	ctx := context.Background()
+	conn1, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("conn1: %v", err)
 	}
-	defer func() {
-		_, _ = conn.ExecContext(context.Background(), `ROLLBACK`)
-	}()
+	defer conn1.Close()
+	conn2, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("conn2: %v", err)
+	}
+	defer conn2.Close()
 
-	resultCh := make(chan error, 1)
-	go func() {
-		var count int
-		resultCh <- db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM sqlite_master`).Scan(&count)
-	}()
+	for i, conn := range []*sql.Conn{conn1, conn2} {
+		var timeoutMS int
+		if err := conn.QueryRowContext(ctx, `PRAGMA busy_timeout;`).Scan(&timeoutMS); err != nil {
+			t.Fatalf("query busy_timeout conn%d: %v", i+1, err)
+		}
+		if timeoutMS != sqliteBusyTimeoutMS {
+			t.Fatalf("busy_timeout conn%d=%d want=%d", i+1, timeoutMS, sqliteBusyTimeoutMS)
+		}
+		var mode string
+		if err := conn.QueryRowContext(ctx, `PRAGMA journal_mode;`).Scan(&mode); err != nil {
+			t.Fatalf("query journal_mode conn%d: %v", i+1, err)
+		}
+		if strings.ToLower(mode) != "wal" {
+			t.Fatalf("journal_mode conn%d=%q want=wal", i+1, mode)
+		}
+	}
+}
 
-	select {
-	case err := <-resultCh:
-		t.Fatalf("expected query to wait for shared connection, got %v", err)
-	case <-time.After(100 * time.Millisecond):
+func TestNewAdminServerSetsTimeouts(t *testing.T) {
+	srv := newAdminServer("127.0.0.1:0", nethttp.NewServeMux())
+	if srv.ReadHeaderTimeout != adminReadHeaderTimeout {
+		t.Fatalf("ReadHeaderTimeout=%s want=%s", srv.ReadHeaderTimeout, adminReadHeaderTimeout)
+	}
+	if srv.WriteTimeout != adminWriteTimeout {
+		t.Fatalf("WriteTimeout=%s want=%s", srv.WriteTimeout, adminWriteTimeout)
 	}
 }
 

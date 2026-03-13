@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"pipescope/internal/geo/areacity"
+	"pipescope/internal/geo/normalize"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -46,3 +49,17 @@ func requireTable(t *testing.T, db *sql.DB, tableName string) {
 	}
 }
 
+func seedDimAdcode(t *testing.T, db *sql.DB, dim areacity.DimAdcode) {
+	t.Helper()
+	nProvince := normalize.NormalizeProvince(dim.Province)
+	nCity := normalize.NormalizeCity(dim.City)
+	if nCity == "" {
+		nCity = nProvince
+	}
+	if _, err := db.Exec(`
+INSERT INTO dim_adcode(adcode, province, city, district, lat, lng, normalized_province, normalized_city)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`, dim.Adcode, dim.Province, dim.City, dim.District, dim.Lat, dim.Lng, nProvince, nCity); err != nil {
+		t.Fatalf("seed dim_adcode: %v", err)
+	}
+}

@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	nethttp "net/http"
 	"strconv"
 	"time"
@@ -19,11 +20,12 @@ type QueryService interface {
 }
 
 type handlers struct {
-	svc QueryService
+	svc     QueryService
+	timeout time.Duration
 }
 
-func newHandlers(svc QueryService) *handlers {
-	return &handlers{svc: svc}
+func newHandlers(svc QueryService, timeout time.Duration) *handlers {
+	return &handlers{svc: svc, timeout: timeout}
 }
 
 func (h *handlers) handleHealth(w nethttp.ResponseWriter, _ *nethttp.Request) {
@@ -31,62 +33,72 @@ func (h *handlers) handleHealth(w nethttp.ResponseWriter, _ *nethttp.Request) {
 }
 
 func (h *handlers) handleMapChina(w nethttp.ResponseWriter, r *nethttp.Request) {
-	points, err := h.svc.ChinaMap(r.Context(), service.MapQuery{
+	ctx, cancel := h.queryContext(r.Context())
+	defer cancel()
+	points, err := h.svc.ChinaMap(ctx, service.MapQuery{
 		Window: parseWindow(r.URL.Query().Get("window"), 15*time.Minute),
 		Metric: parseMetric(r.URL.Query().Get("metric")),
 	})
 	if err != nil {
-		writeError(w, nethttp.StatusInternalServerError, err)
+		writeQueryError(w, err)
 		return
 	}
 	writeJSON(w, nethttp.StatusOK, map[string]any{"items": points})
 }
 
 func (h *handlers) handleMapProvince(w nethttp.ResponseWriter, r *nethttp.Request) {
-	points, err := h.svc.ProvinceMap(r.Context(), service.ProvinceQuery{
+	ctx, cancel := h.queryContext(r.Context())
+	defer cancel()
+	points, err := h.svc.ProvinceMap(ctx, service.ProvinceQuery{
 		Window:   parseWindow(r.URL.Query().Get("window"), 15*time.Minute),
 		Metric:   parseMetric(r.URL.Query().Get("metric")),
 		Province: r.URL.Query().Get("province"),
 	})
 	if err != nil {
-		writeError(w, nethttp.StatusInternalServerError, err)
+		writeQueryError(w, err)
 		return
 	}
 	writeJSON(w, nethttp.StatusOK, map[string]any{"items": points})
 }
 
 func (h *handlers) handleRules(w nethttp.ResponseWriter, r *nethttp.Request) {
-	points, err := h.svc.Rules(r.Context(), service.RulesQuery{
+	ctx, cancel := h.queryContext(r.Context())
+	defer cancel()
+	points, err := h.svc.Rules(ctx, service.RulesQuery{
 		Window: parseWindow(r.URL.Query().Get("window"), 15*time.Minute),
 	})
 	if err != nil {
-		writeError(w, nethttp.StatusInternalServerError, err)
+		writeQueryError(w, err)
 		return
 	}
 	writeJSON(w, nethttp.StatusOK, map[string]any{"items": points})
 }
 
 func (h *handlers) handleSessions(w nethttp.ResponseWriter, r *nethttp.Request) {
-	points, err := h.svc.Sessions(r.Context(), service.SessionsQuery{
+	ctx, cancel := h.queryContext(r.Context())
+	defer cancel()
+	points, err := h.svc.Sessions(ctx, service.SessionsQuery{
 		Window: parseWindow(r.URL.Query().Get("window"), 15*time.Minute),
 		RuleID: r.URL.Query().Get("rule_id"),
 		Limit:  parseBoundedInt(r.URL.Query().Get("limit"), 100, 1, 500),
 		Offset: parseBoundedInt(r.URL.Query().Get("offset"), 0, 0, 1000000),
 	})
 	if err != nil {
-		writeError(w, nethttp.StatusInternalServerError, err)
+		writeQueryError(w, err)
 		return
 	}
 	writeJSON(w, nethttp.StatusOK, map[string]any{"items": points})
 }
 
 func (h *handlers) handleOverview(w nethttp.ResponseWriter, r *nethttp.Request) {
+	ctx, cancel := h.queryContext(r.Context())
+	defer cancel()
 	o, err := h.svc.Overview(
-		r.Context(),
+		ctx,
 		parseWindow(r.URL.Query().Get("window"), 15*time.Minute),
 	)
 	if err != nil {
-		writeError(w, nethttp.StatusInternalServerError, err)
+		writeQueryError(w, err)
 		return
 	}
 	writeJSON(w, nethttp.StatusOK, o)
@@ -127,8 +139,23 @@ func parseBoundedInt(raw string, fallback int, min int, max int) int {
 	return n
 }
 
-func writeError(w nethttp.ResponseWriter, code int, err error) {
-	writeJSON(w, code, map[string]any{
+func (h *handlers) queryContext(parent context.Context) (context.Context, context.CancelFunc) {
+	if h.timeout <= 0 {
+		return context.WithCancel(parent)
+	}
+	return context.WithTimeout(parent, h.timeout)
+}
+
+func writeQueryError(w nethttp.ResponseWriter, err error) {
+	if err == nil {
+		writeJSON(w, nethttp.StatusInternalServerError, map[string]any{"error": "unknown error"})
+		return
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		writeJSON(w, nethttp.StatusGatewayTimeout, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, nethttp.StatusInternalServerError, map[string]any{
 		"error": err.Error(),
 	})
 }

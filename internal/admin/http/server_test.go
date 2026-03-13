@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"fmt"
 	nethttp "net/http"
 	"net/http/httptest"
 	"testing"
@@ -22,7 +23,7 @@ func TestGetHealth(t *testing.T) {
 
 func TestSessionsEndpointClampsNegativePagination(t *testing.T) {
 	svc := &capturingService{}
-	srv := NewServer(svc)
+	srv := NewServer(svc, 50*time.Millisecond)
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(nethttp.MethodGet, "/api/sessions?limit=-5&offset=-9", nil)
 
@@ -41,7 +42,7 @@ func TestSessionsEndpointClampsNegativePagination(t *testing.T) {
 
 func TestSessionsEndpointClampsOversizedLimit(t *testing.T) {
 	svc := &capturingService{}
-	srv := NewServer(svc)
+	srv := NewServer(svc, 50*time.Millisecond)
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(nethttp.MethodGet, "/api/sessions?limit=9999&offset=3", nil)
 
@@ -60,7 +61,7 @@ func TestSessionsEndpointClampsOversizedLimit(t *testing.T) {
 
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
-	return NewServer(fakeService{})
+	return NewServer(fakeService{}, 50*time.Millisecond)
 }
 
 type fakeService struct{}
@@ -95,9 +96,63 @@ func (fakeService) ProvinceMap(context.Context, service.ProvinceQuery) ([]servic
 	return []service.MapPoint{}, nil
 }
 
+type timeoutService struct{}
+
+type wrappedTimeoutService struct{}
+
+func (timeoutService) ChinaMap(ctx context.Context, q service.MapQuery) ([]service.MapPoint, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (timeoutService) Rules(ctx context.Context, q service.RulesQuery) ([]service.RulePoint, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (timeoutService) Sessions(ctx context.Context, q service.SessionsQuery) ([]service.SessionItem, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (timeoutService) Overview(ctx context.Context, window time.Duration) (service.Overview, error) {
+	<-ctx.Done()
+	return service.Overview{}, ctx.Err()
+}
+
+func (timeoutService) ProvinceMap(ctx context.Context, q service.ProvinceQuery) ([]service.MapPoint, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (wrappedTimeoutService) ChinaMap(ctx context.Context, q service.MapQuery) ([]service.MapPoint, error) {
+	<-ctx.Done()
+	return nil, fmt.Errorf("wrapped: %w", ctx.Err())
+}
+
+func (wrappedTimeoutService) Rules(ctx context.Context, q service.RulesQuery) ([]service.RulePoint, error) {
+	<-ctx.Done()
+	return nil, fmt.Errorf("wrapped: %w", ctx.Err())
+}
+
+func (wrappedTimeoutService) Sessions(ctx context.Context, q service.SessionsQuery) ([]service.SessionItem, error) {
+	<-ctx.Done()
+	return nil, fmt.Errorf("wrapped: %w", ctx.Err())
+}
+
+func (wrappedTimeoutService) Overview(ctx context.Context, window time.Duration) (service.Overview, error) {
+	<-ctx.Done()
+	return service.Overview{}, fmt.Errorf("wrapped: %w", ctx.Err())
+}
+
+func (wrappedTimeoutService) ProvinceMap(ctx context.Context, q service.ProvinceQuery) ([]service.MapPoint, error) {
+	<-ctx.Done()
+	return nil, fmt.Errorf("wrapped: %w", ctx.Err())
+}
+
 func TestSessionsEndpointClampsOversizedOffset(t *testing.T) {
 	svc := &capturingService{}
-	srv := NewServer(svc)
+	srv := NewServer(svc, 50*time.Millisecond)
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(nethttp.MethodGet, "/api/sessions?limit=5&offset=999999999", nil)
 
@@ -111,5 +166,29 @@ func TestSessionsEndpointClampsOversizedOffset(t *testing.T) {
 	}
 	if svc.sessionsQuery.Offset != 1000000 {
 		t.Fatalf("Offset=%d want=1000000", svc.sessionsQuery.Offset)
+	}
+}
+
+func TestRulesEndpointTimesOutSlowService(t *testing.T) {
+	srv := NewServer(timeoutService{}, 10*time.Millisecond)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(nethttp.MethodGet, "/api/rules", nil)
+
+	srv.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != nethttp.StatusGatewayTimeout {
+		t.Fatalf("code=%d want=%d", rr.Code, nethttp.StatusGatewayTimeout)
+	}
+}
+
+func TestRulesEndpointTimesOutWrappedServiceError(t *testing.T) {
+	srv := NewServer(wrappedTimeoutService{}, 10*time.Millisecond)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(nethttp.MethodGet, "/api/rules", nil)
+
+	srv.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != nethttp.StatusGatewayTimeout {
+		t.Fatalf("code=%d want=%d", rr.Code, nethttp.StatusGatewayTimeout)
 	}
 }

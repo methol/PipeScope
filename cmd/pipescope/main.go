@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	nethttp "net/http"
+	neturl "net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -121,10 +122,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	defer runner.Close()
 
 	adminAddr := net.JoinHostPort(cfg.Admin.Host, fmt.Sprintf("%d", cfg.Admin.Port))
-	httpSrv := &nethttp.Server{
-		Addr:    adminAddr,
-		Handler: newAdminHandler(db),
-	}
+	httpSrv := newAdminServer(adminAddr, newAdminHandler(db))
 
 	httpErrCh := make(chan error, 1)
 	go func() {
@@ -157,16 +155,41 @@ func run(ctx context.Context, cfg *config.Config) error {
 	}
 }
 
-// PipeScope runtime intentionally serializes SQLite access to avoid SQLITE_BUSY
-// between the background writer and admin read queries on separate pooled connections.
+const (
+	sqliteBusyTimeoutMS    = 3000
+	adminQueryTimeout      = 3 * time.Second
+	adminReadHeaderTimeout = 5 * time.Second
+	adminWriteTimeout      = 5 * time.Second
+)
+
 func openSQLite(path string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", path)
+	dsn := sqliteDSN(path)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
+
+	db.SetConnMaxLifetime(0)
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(10)
 	return db, nil
+}
+
+func sqliteDSN(path string) string {
+	values := neturl.Values{}
+	values.Add("_pragma", fmt.Sprintf("journal_mode(%s)", "WAL"))
+	values.Add("_pragma", fmt.Sprintf("synchronous(%s)", "NORMAL"))
+	values.Add("_pragma", fmt.Sprintf("busy_timeout(%d)", sqliteBusyTimeoutMS))
+	return fmt.Sprintf("%s?%s", path, values.Encode())
+}
+
+func newAdminServer(addr string, handler nethttp.Handler) *nethttp.Server {
+	return &nethttp.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: adminReadHeaderTimeout,
+		WriteTimeout:      adminWriteTimeout,
+	}
 }
 
 func initAreaCityMatcher(ctx context.Context, db *sql.DB, cfg *config.Config) (sqlitestore.AdcodeMatcher, error) {
@@ -182,7 +205,7 @@ func initAreaCityMatcher(ctx context.Context, db *sql.DB, cfg *config.Config) (s
 
 func newAdminHandler(db *sql.DB) nethttp.Handler {
 	svc := adminservice.New(db)
-	return adminhttp.NewServer(svc).Handler()
+	return adminhttp.NewServer(svc, adminQueryTimeout).Handler()
 }
 
 func convertRules(src []config.ProxyRule) []rule.Rule {
