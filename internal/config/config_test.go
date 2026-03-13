@@ -89,3 +89,16 @@ func TestLoadConfigPreservesZeroTimeouts(t *testing.T) {
 		t.Fatalf("IdleMS=%d want=0", cfg.Timeouts.IdleMS)
 	}
 }
+
+func TestLoadConfigRejectsInvalidDialMS(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/config.yaml"
+	content := []byte("data:\n  sqlite_path: ./data/test.db\nproxy_rules: []\nwriter: {}\ntimeouts:\n  dial_ms: \"not-a-number\"\nadmin: {}\n")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	_, err := Load(path)
+	if err == nil {
+		t.Fatalf("expected error for invalid dial_ms")
+	}
+}
