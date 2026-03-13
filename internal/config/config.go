@@ -50,6 +50,18 @@ type AdminConfig struct {
 	Port int    `yaml:"port"`
 }
 
+const (
+	DefaultWriterQueueSize     = 1024
+	DefaultWriterBatchSize     = 200
+	DefaultWriterFlushInterval = 1000
+	DefaultWriterFullPolicy    = "drop"
+	DefaultWriterSampleRate    = 0.1
+	DefaultDialTimeoutMS       = 1500
+	DefaultIdleTimeoutMS       = 60000
+	DefaultAdminHost           = "127.0.0.1"
+	DefaultAdminPort           = 9100
+)
+
 func Load(path string) (*Config, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -63,6 +75,37 @@ func Load(path string) (*Config, error) {
 	if cfg.Data.IP2RegionXDB != "" || cfg.Data.IP2RegionV6XDB != "" || cfg.Data.AreaCityCSVPath != "" || cfg.Data.AreaCityAPIBaseURL != "" || cfg.Data.AreaCityAPIInstance != 0 {
 		return nil, fmt.Errorf("legacy external geo/ip config is no longer supported; use embedded data assets")
 	}
+	applyDefaults(&cfg)
 
 	return &cfg, nil
+}
+
+func applyDefaults(cfg *Config) {
+	if cfg.Writer.QueueSize <= 0 {
+		cfg.Writer.QueueSize = DefaultWriterQueueSize
+	}
+	if cfg.Writer.BatchSize <= 0 {
+		cfg.Writer.BatchSize = DefaultWriterBatchSize
+	}
+	if cfg.Writer.FlushInterval <= 0 {
+		cfg.Writer.FlushInterval = DefaultWriterFlushInterval
+	}
+	if cfg.Writer.FullQueuePolicy == "" {
+		cfg.Writer.FullQueuePolicy = DefaultWriterFullPolicy
+	}
+	if cfg.Writer.SampleRate <= 0 || cfg.Writer.SampleRate > 1 {
+		cfg.Writer.SampleRate = DefaultWriterSampleRate
+	}
+	if cfg.Timeouts.DialMS <= 0 {
+		cfg.Timeouts.DialMS = DefaultDialTimeoutMS
+	}
+	if cfg.Timeouts.IdleMS <= 0 {
+		cfg.Timeouts.IdleMS = DefaultIdleTimeoutMS
+	}
+	if cfg.Admin.Host == "" {
+		cfg.Admin.Host = DefaultAdminHost
+	}
+	if cfg.Admin.Port <= 0 {
+		cfg.Admin.Port = DefaultAdminPort
+	}
 }

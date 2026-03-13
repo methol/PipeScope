@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	nethttp "net/http"
@@ -94,6 +95,17 @@ func TestOpenSQLiteConfiguresSingleConnectionPool(t *testing.T) {
 	case err := <-resultCh:
 		t.Fatalf("expected query to wait for shared connection, got %v", err)
 	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestUsageIncludesDefaultsAndFlags(t *testing.T) {
+	buf := new(bytes.Buffer)
+	writeUsage(buf)
+	out := buf.String()
+	for _, want := range []string{"PipeScope", "-config", "assets/config.example.yaml"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("usage missing %q in %q", want, out)
+		}
 	}
 }
 
