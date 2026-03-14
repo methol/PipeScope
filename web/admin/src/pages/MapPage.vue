@@ -66,7 +66,10 @@ function provinceColor(name: string): string {
 
 function provinceRegions(points: ProvinceSummaryPoint[]) {
   const dataByProvince = new Map<string, number>()
-  for (const it of points) dataByProvince.set(canonicalProvinceName(it.province), it.value)
+  for (const it of points) {
+    const name = canonicalProvinceName(it.province)
+    dataByProvince.set(name, (dataByProvince.get(name) ?? 0) + it.value)
+  }
   return Array.from(dataByProvince.entries()).map(([name, value]) => ({
     name,
     value,
@@ -118,14 +121,21 @@ async function load() {
   error.value = ''
   try {
     await ensureChinaMap()
-    const [cities, provinces] = await Promise.all([
-      fetchChinaMap({ window: windowText.value, metric: metric.value }),
-      fetchProvinceSummary({ window: windowText.value, metric: metric.value }),
-    ])
+
+    const cities = await fetchChinaMap({ window: windowText.value, metric: metric.value })
     cityItems.value = cities
-    provinceItems.value = provinces
+
+    try {
+      provinceItems.value = await fetchProvinceSummary({ window: windowText.value, metric: metric.value })
+    } catch (e) {
+      provinceItems.value = []
+      error.value = e instanceof Error ? `省级汇总加载失败（已降级展示城市热力）: ${e.message}` : '省级汇总加载失败（已降级展示城市热力）'
+    }
+
     render()
   } catch (e) {
+    cityItems.value = []
+    provinceItems.value = []
     error.value = e instanceof Error ? e.message : 'unknown error'
     render()
   } finally {

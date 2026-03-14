@@ -9,6 +9,8 @@ const geoJSON = {
 
 function stubFetch(options?: {
   geoOK?: boolean
+  cityOK?: boolean
+  provinceSummaryOK?: boolean
   apiItems?: Array<{
     adcode: string
     province: string
@@ -23,6 +25,8 @@ function stubFetch(options?: {
   }>
 }) {
   const geoOK = options?.geoOK ?? true
+  const cityOK = options?.cityOK ?? true
+  const provinceSummaryOK = options?.provinceSummaryOK ?? true
   const apiItems =
     options?.apiItems ?? [
       {
@@ -49,15 +53,15 @@ function stubFetch(options?: {
       }
       if (url.includes('/api/map/china')) {
         return {
-          ok: true,
-          status: 200,
+          ok: cityOK,
+          status: cityOK ? 200 : 500,
           json: async () => ({ items: apiItems }),
         }
       }
       if (url.includes('/api/map/province-summary')) {
         return {
-          ok: true,
-          status: 200,
+          ok: provinceSummaryOK,
+          status: provinceSummaryOK ? 200 : 500,
           json: async () => ({ items: provinceSummaryItems }),
         }
       }
@@ -99,6 +103,22 @@ describe('MapPage', () => {
     stubFetch({
       apiItems: [],
       provinceSummaryItems: [{ province: '广东', value: 3 }],
+    })
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    expect(wrapper.text()).toContain('省份命中率: 1/1')
+
+    wrapper.unmount()
+  })
+
+  it('aggregates duplicated provinces after normalization', async () => {
+    stubFetch({
+      apiItems: [],
+      provinceSummaryItems: [
+        { province: '广东', value: 3 },
+        { province: '广东省', value: 7 },
+      ],
     })
     const wrapper = mount(MapPage)
     await flushPage()
@@ -153,6 +173,29 @@ describe('MapPage', () => {
 
     expect(wrapper.text()).toContain('当前窗口暂无城市指标数据')
     expect(wrapper.find('.chart').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('keeps city heat data when province summary request fails', async () => {
+    stubFetch({
+      provinceSummaryOK: false,
+      apiItems: [
+        {
+          adcode: '440300',
+          province: '广东省',
+          city: '深圳',
+          lat: 22.5431,
+          lng: 114.0579,
+          value: 5,
+        },
+      ],
+    })
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    expect(wrapper.text()).toContain('省级汇总加载失败（已降级展示城市热力）')
+    expect(wrapper.text()).toContain('广东省深圳')
 
     wrapper.unmount()
   })
