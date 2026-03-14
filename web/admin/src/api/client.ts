@@ -49,6 +49,11 @@ export async function fetchChinaMap(params: { window: string; metric: string }):
   return rsp.items ?? []
 }
 
+export interface ProvinceSummaryPoint {
+  province: string
+  value: number
+}
+
 export async function fetchProvinceMap(params: {
   window: string
   metric: string
@@ -56,6 +61,12 @@ export async function fetchProvinceMap(params: {
 }): Promise<MapPoint[]> {
   const q = new URLSearchParams(params)
   const rsp = await fetchJSON<{ items: MapPoint[] }>(`/api/map/province?${q.toString()}`)
+  return rsp.items ?? []
+}
+
+export async function fetchProvinceSummary(params: { window: string; metric: string }): Promise<ProvinceSummaryPoint[]> {
+  const q = new URLSearchParams(params)
+  const rsp = await fetchJSON<{ items: ProvinceSummaryPoint[] }>(`/api/map/province-summary?${q.toString()}`)
   return rsp.items ?? []
 }
 

@@ -96,6 +96,10 @@ func (fakeService) ProvinceMap(context.Context, service.ProvinceQuery) ([]servic
 	return []service.MapPoint{}, nil
 }
 
+func (fakeService) ProvinceSummary(context.Context, service.MapQuery) ([]service.ProvinceSummaryPoint, error) {
+	return []service.ProvinceSummaryPoint{}, nil
+}
+
 type timeoutService struct{}
 
 type wrappedTimeoutService struct{}
@@ -125,6 +129,11 @@ func (timeoutService) ProvinceMap(ctx context.Context, q service.ProvinceQuery) 
 	return nil, ctx.Err()
 }
 
+func (timeoutService) ProvinceSummary(ctx context.Context, q service.MapQuery) ([]service.ProvinceSummaryPoint, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
 func (wrappedTimeoutService) ChinaMap(ctx context.Context, q service.MapQuery) ([]service.MapPoint, error) {
 	<-ctx.Done()
 	return nil, fmt.Errorf("wrapped: %w", ctx.Err())
@@ -146,6 +155,11 @@ func (wrappedTimeoutService) Overview(ctx context.Context, window time.Duration)
 }
 
 func (wrappedTimeoutService) ProvinceMap(ctx context.Context, q service.ProvinceQuery) ([]service.MapPoint, error) {
+	<-ctx.Done()
+	return nil, fmt.Errorf("wrapped: %w", ctx.Err())
+}
+
+func (wrappedTimeoutService) ProvinceSummary(ctx context.Context, q service.MapQuery) ([]service.ProvinceSummaryPoint, error) {
 	<-ctx.Done()
 	return nil, fmt.Errorf("wrapped: %w", ctx.Err())
 }

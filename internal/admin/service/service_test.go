@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	sqlitestore "pipescope/internal/store/sqlite"
 	_ "modernc.org/sqlite"
+	sqlitestore "pipescope/internal/store/sqlite"
 )
 
 func TestChinaMapAggregation(t *testing.T) {
@@ -21,20 +21,20 @@ func TestChinaMapAggregation(t *testing.T) {
 	now := time.Now()
 	nowMS := now.UnixMilli()
 	seedConnEvent(t, db, seedEvent{
-		RuleID:    "r1",
-		Adcode:    "440300",
-		City:      "深圳",
-		Province:  "广东",
+		RuleID:     "r1",
+		Adcode:     "440300",
+		City:       "深圳",
+		Province:   "广东",
 		TotalBytes: 100,
-		StartTS:   nowMS - int64((5 * time.Minute) / time.Millisecond),
+		StartTS:    nowMS - int64((5*time.Minute)/time.Millisecond),
 	})
 	seedConnEvent(t, db, seedEvent{
-		RuleID:    "r2",
-		Adcode:    "440300",
-		City:      "深圳",
-		Province:  "广东",
+		RuleID:     "r2",
+		Adcode:     "440300",
+		City:       "深圳",
+		Province:   "广东",
 		TotalBytes: 300,
-		StartTS:   nowMS - int64((3 * time.Minute) / time.Millisecond),
+		StartTS:    nowMS - int64((3*time.Minute)/time.Millisecond),
 	})
 
 	svc := New(db)
@@ -78,6 +78,66 @@ INSERT INTO conn_events(
 	}
 }
 
+func TestProvinceSummaryAggregation(t *testing.T) {
+	db := openTempDB(t)
+	store := sqlitestore.New(db)
+	if err := store.InitSchema(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	nowMS := now.UnixMilli()
+	seedConnEvent(t, db, seedEvent{
+		RuleID:     "r1",
+		Adcode:     "440300",
+		City:       "深圳",
+		Province:   "广东省",
+		TotalBytes: 100,
+		StartTS:    nowMS - int64((5*time.Minute)/time.Millisecond),
+	})
+	seedConnEvent(t, db, seedEvent{
+		RuleID:     "r2",
+		Adcode:     "330100",
+		City:       "杭州",
+		Province:   "浙江省",
+		TotalBytes: 300,
+		StartTS:    nowMS - int64((3*time.Minute)/time.Millisecond),
+	})
+	seedConnEvent(t, db, seedEvent{
+		RuleID:     "r3",
+		Adcode:     "330200",
+		City:       "宁波",
+		Province:   "浙江省",
+		TotalBytes: 500,
+		StartTS:    nowMS - int64((2*time.Minute)/time.Millisecond),
+	})
+
+	svc := New(db)
+	svc.SetNowFunc(func() time.Time { return now })
+
+	points, err := svc.ProvinceSummary(context.Background(), MapQuery{Window: 15 * time.Minute, Metric: MetricConn})
+	if err != nil {
+		t.Fatalf("ProvinceSummary conn: %v", err)
+	}
+	if len(points) != 2 {
+		t.Fatalf("conn points len=%d", len(points))
+	}
+	if points[0].Province != "浙江省" || points[0].Value != 2 {
+		t.Fatalf("unexpected conn top point: %+v", points[0])
+	}
+
+	points, err = svc.ProvinceSummary(context.Background(), MapQuery{Window: 15 * time.Minute, Metric: MetricBytes})
+	if err != nil {
+		t.Fatalf("ProvinceSummary bytes: %v", err)
+	}
+	if len(points) != 2 {
+		t.Fatalf("bytes points len=%d", len(points))
+	}
+	if points[0].Province != "浙江省" || points[0].Value != 800 {
+		t.Fatalf("unexpected bytes top point: %+v", points[0])
+	}
+}
+
 func openTempDB(t *testing.T) *sql.DB {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "pipescope-admin-service-test.db")
@@ -88,4 +148,3 @@ func openTempDB(t *testing.T) *sql.DB {
 	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
-

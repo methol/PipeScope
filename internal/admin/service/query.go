@@ -38,6 +38,11 @@ type MapPoint struct {
 	Value    int64   `json:"value"`
 }
 
+type ProvinceSummaryPoint struct {
+	Province string `json:"province"`
+	Value    int64  `json:"value"`
+}
+
 type RulePoint struct {
 	RuleID     string `json:"rule_id"`
 	ConnCount  int64  `json:"conn_count"`
@@ -65,4 +70,3 @@ type Overview struct {
 	ConnCount  int64 `json:"conn_count"`
 	TotalBytes int64 `json:"total_bytes"`
 }
-
