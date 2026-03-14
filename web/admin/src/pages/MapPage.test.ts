@@ -4,7 +4,7 @@ import MapPage from './MapPage.vue'
 
 const geoJSON = {
   type: 'FeatureCollection',
-  features: [],
+  features: [{ properties: { province: '广东省' } }],
 }
 
 function stubFetch(options?: {
@@ -17,18 +17,24 @@ function stubFetch(options?: {
     lng: number
     value: number
   }>
+  provinceSummaryItems?: Array<{
+    province: string
+    value: number
+  }>
 }) {
   const geoOK = options?.geoOK ?? true
-  const apiItems = options?.apiItems ?? [
-    {
-      adcode: '440300',
-      province: '广东',
-      city: '深圳',
-      lat: 22.5431,
-      lng: 114.0579,
-      value: 5,
-    },
-  ]
+  const apiItems =
+    options?.apiItems ?? [
+      {
+        adcode: '440300',
+        province: '广东省',
+        city: '深圳',
+        lat: 22.5431,
+        lng: 114.0579,
+        value: 5,
+      },
+    ]
+  const provinceSummaryItems = options?.provinceSummaryItems ?? [{ province: '广东省', value: 5 }]
 
   vi.stubGlobal(
     'fetch',
@@ -46,6 +52,13 @@ function stubFetch(options?: {
           ok: true,
           status: 200,
           json: async () => ({ items: apiItems }),
+        }
+      }
+      if (url.includes('/api/map/province-summary')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ items: provinceSummaryItems }),
         }
       }
       throw new Error(`unexpected fetch url: ${url}`)
@@ -67,7 +80,7 @@ describe('MapPage', () => {
     vi.unstubAllGlobals()
   })
 
-  it('loads county geojson and calls china map api', async () => {
+  it('loads geojson, city data and province summary api', async () => {
     const wrapper = mount(MapPage)
     await flushPage()
 
@@ -75,7 +88,50 @@ describe('MapPage', () => {
     const calls = (fetch as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]))
     expect(calls.some((call) => call.includes('/maps/china-counties.geojson'))).toBe(true)
     expect(calls.some((call) => call.includes('/api/map/china'))).toBe(true)
+    expect(calls.some((call) => call.includes('/api/map/province-summary'))).toBe(true)
     expect(calls.some((call) => call.includes('metric=conn'))).toBe(true)
+
+    wrapper.unmount()
+  })
+
+
+  it('normalizes province names to map feature namespace and reports coverage', async () => {
+    stubFetch({
+      apiItems: [],
+      provinceSummaryItems: [{ province: '广东', value: 3 }],
+    })
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    expect(wrapper.text()).toContain('省份命中率: 1/1')
+
+    wrapper.unmount()
+  })
+
+  it('switches metric to bytes and renders human-readable units', async () => {
+    stubFetch({
+      apiItems: [
+        {
+          adcode: '440300',
+          province: '广东省',
+          city: '深圳',
+          lat: 22.5431,
+          lng: 114.0579,
+          value: 2048,
+        },
+      ],
+      provinceSummaryItems: [{ province: '广东省', value: 2048 }],
+    })
+
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    await wrapper.findAll('select')[1].setValue('bytes')
+    await flushPage()
+
+    const calls = (fetch as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]))
+    expect(calls.some((call) => call.includes('metric=bytes'))).toBe(true)
+    expect(wrapper.text()).toContain('2.00 KB')
 
     wrapper.unmount()
   })
@@ -91,7 +147,7 @@ describe('MapPage', () => {
   })
 
   it('handles empty api data without crashing', async () => {
-    stubFetch({ apiItems: [] })
+    stubFetch({ apiItems: [], provinceSummaryItems: [] })
     const wrapper = mount(MapPage)
     await flushPage()
 

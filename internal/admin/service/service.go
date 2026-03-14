@@ -30,7 +30,7 @@ func (s *Service) ChinaMap(ctx context.Context, q MapQuery) ([]MapPoint, error) 
 		metricExpr = "COALESCE(SUM(total_bytes), 0)"
 	}
 
-rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.db.QueryContext(ctx, `
 SELECT COALESCE(NULLIF(adcode, ''), 'unknown') AS adcode, province, city, MAX(lat) AS lat, MAX(lng) AS lng, `+metricExpr+` AS v
 FROM conn_events
 WHERE start_ts >= ?
@@ -137,7 +137,7 @@ func (s *Service) ProvinceMap(ctx context.Context, q ProvinceQuery) ([]MapPoint,
 	if q.Metric == MetricBytes {
 		metricExpr = "COALESCE(SUM(total_bytes), 0)"
 	}
-rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.db.QueryContext(ctx, `
 SELECT COALESCE(NULLIF(adcode, ''), 'unknown') AS adcode, province, city, MAX(lat) AS lat, MAX(lng) AS lng, `+metricExpr+` AS v
 FROM conn_events
 WHERE start_ts >= ?
@@ -154,6 +154,35 @@ ORDER BY v DESC
 	for rows.Next() {
 		var p MapPoint
 		if err := rows.Scan(&p.Adcode, &p.Province, &p.City, &p.Lat, &p.Lng, &p.Value); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+func (s *Service) ProvinceSummary(ctx context.Context, q MapQuery) ([]ProvinceSummaryPoint, error) {
+	metricExpr := "COUNT(*)"
+	if q.Metric == MetricBytes {
+		metricExpr = "COALESCE(SUM(total_bytes), 0)"
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+SELECT COALESCE(NULLIF(province, ''), '未知') AS province, `+metricExpr+` AS v
+FROM conn_events
+WHERE start_ts >= ?
+GROUP BY province
+ORDER BY v DESC
+`, s.windowStartMS(q.Window))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []ProvinceSummaryPoint
+	for rows.Next() {
+		var p ProvinceSummaryPoint
+		if err := rows.Scan(&p.Province, &p.Value); err != nil {
 			return nil, err
 		}
 		out = append(out, p)

@@ -18,6 +18,7 @@ type QueryService interface {
 	Sessions(ctx context.Context, q service.SessionsQuery) ([]service.SessionItem, error)
 	Overview(ctx context.Context, window time.Duration) (service.Overview, error)
 	ProvinceMap(ctx context.Context, q service.ProvinceQuery) ([]service.MapPoint, error)
+	ProvinceSummary(ctx context.Context, q service.MapQuery) ([]service.ProvinceSummaryPoint, error)
 }
 
 type handlers struct {
@@ -54,6 +55,20 @@ func (h *handlers) handleMapProvince(w nethttp.ResponseWriter, r *nethttp.Reques
 		Window:   parseWindow(r.URL.Query().Get("window"), 15*time.Minute),
 		Metric:   parseMetric(r.URL.Query().Get("metric")),
 		Province: r.URL.Query().Get("province"),
+	})
+	if err != nil {
+		writeQueryError(w, err)
+		return
+	}
+	writeJSON(w, nethttp.StatusOK, map[string]any{"items": points})
+}
+
+func (h *handlers) handleMapProvinceSummary(w nethttp.ResponseWriter, r *nethttp.Request) {
+	ctx, cancel := h.queryContext(r.Context())
+	defer cancel()
+	points, err := h.svc.ProvinceSummary(ctx, service.MapQuery{
+		Window: parseWindow(r.URL.Query().Get("window"), 15*time.Minute),
+		Metric: parseMetric(r.URL.Query().Get("metric")),
 	})
 	if err != nil {
 		writeQueryError(w, err)
