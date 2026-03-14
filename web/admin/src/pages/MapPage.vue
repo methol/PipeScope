@@ -2,6 +2,7 @@
 import * as echarts from 'echarts'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { fetchChinaMap, type MapPoint } from '../api/client'
+import { formatBytes } from '../utils/format'
 
 const CHINA_MAP_NAME = 'china-counties'
 const CHINA_GEOJSON_URL = '/maps/china-counties.geojson'
@@ -20,6 +21,7 @@ let mapLoading: Promise<void> | null = null
 
 const title = computed(() => (metric.value === 'bytes' ? '流量热度' : '连接热度'))
 const emptyHint = computed(() => (!loading.value && !error.value && items.value.length === 0 ? '当前窗口暂无城市指标数据' : ''))
+const displayValue = (v: number) => (metric.value === 'bytes' ? formatBytes(v) : String(v))
 
 async function ensureChinaMap() {
   if (mapReady) return
@@ -88,7 +90,7 @@ function render() {
       formatter: (params: { seriesType?: string; data?: any; name?: string; value?: any }) => {
         if (params.seriesType === 'scatter' && params.data) {
           const v = Array.isArray(params.value) ? params.value[2] : params.data.value?.[2]
-          return `${params.data.province || ''}${params.data.city || params.name}<br/>${title.value}: ${v ?? 0}`
+          return `${params.data.province || ''}${params.data.city || params.name}<br/>${title.value}: ${displayValue(Number(v ?? 0))}`
         }
         return params.name || ''
       },
@@ -174,6 +176,9 @@ function onResize() {
             <option value="5m">5m</option>
             <option value="15m">15m</option>
             <option value="1h">1h</option>
+            <option value="1d">1d</option>
+            <option value="1w">1w</option>
+            <option value="1mo">1mo</option>
           </select>
         </label>
         <label>
@@ -196,7 +201,7 @@ function onResize() {
     <ul class="city-list">
       <li v-for="item in items.slice(0, 8)" :key="item.adcode + item.city">
         <span>{{ item.province }}{{ item.city }}</span>
-        <strong>{{ item.value }}</strong>
+        <strong>{{ displayValue(item.value) }}</strong>
       </li>
     </ul>
   </section>

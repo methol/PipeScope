@@ -6,6 +6,7 @@ import (
 	"errors"
 	nethttp "net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"pipescope/internal/admin/service"
@@ -108,11 +109,45 @@ func parseWindow(raw string, fallback time.Duration) time.Duration {
 	if raw == "" {
 		return fallback
 	}
+
+	raw = strings.TrimSpace(strings.ToLower(raw))
+	if d, ok := parseFriendlyWindow(raw); ok {
+		return d
+	}
+
 	d, err := time.ParseDuration(raw)
-	if err != nil {
+	if err != nil || d <= 0 {
 		return fallback
 	}
 	return d
+}
+
+func parseFriendlyWindow(raw string) (time.Duration, bool) {
+	if len(raw) < 2 {
+		return 0, false
+	}
+
+	parse := func(unit string, mul time.Duration) (time.Duration, bool) {
+		if !strings.HasSuffix(raw, unit) {
+			return 0, false
+		}
+		n, err := strconv.Atoi(strings.TrimSuffix(raw, unit))
+		if err != nil || n <= 0 {
+			return 0, false
+		}
+		return time.Duration(n) * mul, true
+	}
+
+	if d, ok := parse("d", 24*time.Hour); ok {
+		return d, true
+	}
+	if d, ok := parse("w", 7*24*time.Hour); ok {
+		return d, true
+	}
+	if d, ok := parse("mo", 30*24*time.Hour); ok {
+		return d, true
+	}
+	return 0, false
 }
 
 func parseMetric(raw string) string {

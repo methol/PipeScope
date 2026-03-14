@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
 import { fetchRules, type RulePoint } from '../api/client'
+import { formatBytes } from '../utils/format'
 
 const windowText = ref('15m')
 const items = ref<RulePoint[]>([])
@@ -38,6 +39,9 @@ onUnmounted(() => {
           <option value="5m">5m</option>
           <option value="15m">15m</option>
           <option value="1h">1h</option>
+          <option value="1d">1d</option>
+          <option value="1w">1w</option>
+          <option value="1mo">1mo</option>
         </select>
       </label>
     </div>
@@ -56,7 +60,7 @@ onUnmounted(() => {
         <tr v-for="item in items" :key="item.rule_id">
           <td>{{ item.rule_id }}</td>
           <td>{{ item.conn_count }}</td>
-          <td>{{ item.total_bytes }}</td>
+          <td>{{ formatBytes(item.total_bytes) }}</td>
         </tr>
       </tbody>
     </table>
