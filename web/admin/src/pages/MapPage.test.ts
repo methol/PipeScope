@@ -1,43 +1,102 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import MapPage from './MapPage.vue'
 
-describe('MapPage', () => {
-  const mockResponse = {
-    items: [
-      {
-        adcode: '440300',
-        province: '广东',
-        city: '深圳',
-        lat: 22.5431,
-        lng: 114.0579,
-        value: 5,
-      },
-    ],
-  }
+const geoJSON = {
+  type: 'FeatureCollection',
+  features: [],
+}
 
+function stubFetch(options?: {
+  geoOK?: boolean
+  apiItems?: Array<{
+    adcode: string
+    province: string
+    city: string
+    lat: number
+    lng: number
+    value: number
+  }>
+}) {
+  const geoOK = options?.geoOK ?? true
+  const apiItems = options?.apiItems ?? [
+    {
+      adcode: '440300',
+      province: '广东',
+      city: '深圳',
+      lat: 22.5431,
+      lng: 114.0579,
+      value: 5,
+    },
+  ]
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.includes('/maps/china-counties.geojson')) {
+        return {
+          ok: geoOK,
+          status: geoOK ? 200 : 500,
+          json: async () => geoJSON,
+        }
+      }
+      if (url.includes('/api/map/china')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ items: apiItems }),
+        }
+      }
+      throw new Error(`unexpected fetch url: ${url}`)
+    }),
+  )
+}
+
+async function flushPage() {
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+describe('MapPage', () => {
   beforeEach(() => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => mockResponse,
-      })),
-    )
+    stubFetch()
   })
 
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('renders map page and calls china map api', async () => {
+  it('loads county geojson and calls china map api', async () => {
     const wrapper = mount(MapPage)
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await flushPage()
 
     expect(fetch).toHaveBeenCalled()
-    const call = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]
-    expect(String(call)).toContain('/api/map/china')
-    expect(String(call)).toContain('window=15m')
+    const calls = (fetch as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]))
+    expect(calls.some((call) => call.includes('/maps/china-counties.geojson'))).toBe(true)
+    expect(calls.some((call) => call.includes('/api/map/china'))).toBe(true)
+    expect(calls.some((call) => call.includes('metric=conn'))).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('shows a visible error when geojson loading fails', async () => {
+    stubFetch({ geoOK: false })
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    expect(wrapper.text()).toContain('底图加载失败')
+
+    wrapper.unmount()
+  })
+
+  it('handles empty api data without crashing', async () => {
+    stubFetch({ apiItems: [] })
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    expect(wrapper.text()).toContain('当前窗口暂无城市指标数据')
+    expect(wrapper.find('.chart').exists()).toBe(true)
 
     wrapper.unmount()
   })

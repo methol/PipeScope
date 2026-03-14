@@ -208,7 +208,25 @@ go run ./cmd/pipescope -config assets/config.example.yaml
 make build-web sync-web
 ```
 
-#### 5) 如何定位日志？
+#### 5) 如何重新生成中国县区底图 GeoJSON？
+
+地图边界来自 `data/ok_geo.csv`（`deep=2`，排除港澳台县区）。
+可用下面命令重新生成：
+
+```bash
+go run ./cmd/gen-china-counties-geojson \
+  -input data/ok_geo.csv \
+  -output web/admin/public/maps/china-counties.geojson \
+  -simplify-epsilon 0.0012 \
+  -precision 5
+```
+
+参数说明：
+
+- `-simplify-epsilon`：离线简化阈值（度），值越大体积越小、边界越粗
+- `-precision`：坐标保留小数位数
+
+#### 6) 如何定位日志？
 
 当前程序主要输出到标准错误。建议直接前台运行观察：
 
