@@ -3,7 +3,7 @@ import * as echarts from 'echarts'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { fetchChinaMap, type MapPoint } from '../api/client'
 import { formatBytes } from '../utils/format'
-import { cityKey, normalizeCityGeoFeatures } from './mapCity'
+import { createCityJoinKeyResolver, normalizeCityGeoFeatures } from './mapCity'
 
 const CHINA_MAP_NAME = 'china-cities'
 const CHINA_GEOJSON_URL = '/maps/china-cities.geojson'
@@ -13,6 +13,7 @@ const metric = ref('conn')
 const loading = ref(false)
 const error = ref('')
 const cityItems = ref<MapPoint[]>([])
+const resolveCityJoinKey = ref<(item: MapPoint) => string>((item) => String(item.adcode || '').trim())
 
 const chartEl = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
@@ -32,6 +33,7 @@ async function ensureChinaMap() {
     if (!rsp.ok) throw new Error(`底图加载失败: ${rsp.status}`)
     const geoJSON = await rsp.json()
     geoJSON.features = normalizeCityGeoFeatures(Array.isArray(geoJSON?.features) ? geoJSON.features : [])
+    resolveCityJoinKey.value = createCityJoinKeyResolver(geoJSON.features)
     echarts.registerMap(CHINA_MAP_NAME, geoJSON)
     mapReady = true
   })()
@@ -65,7 +67,7 @@ function render() {
   if (!chart) chart = echarts.init(chartEl.value, undefined, { renderer: 'canvas' })
 
   const cityData = cityItems.value.map((item) => ({
-    name: cityKey(item),
+    name: resolveCityJoinKey.value(item),
     cityName: item.city,
     value: Number(item.value) || 0,
   }))
