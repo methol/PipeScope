@@ -75,11 +75,13 @@ function render() {
   if (typeof window !== 'undefined' && /jsdom/i.test(window.navigator.userAgent)) return
   if (!chart) chart = echarts.init(chartEl.value, undefined, { renderer: 'canvas' })
 
-  const cityData = cityItems.value.map((item) => ({
-    name: resolveCityJoinKey.value(item),
-    cityName: item.city,
-    value: Number(item.value) || 0,
-  }))
+  const cityData = cityItems.value
+    .map((item) => ({
+      name: resolveCityJoinKey.value(item),
+      cityName: item.city,
+      value: Number(item.value) || 0,
+    }))
+    .filter((item) => item.name && mapCityNameByKey.value.has(item.name))
   const cityNameByKey = new Map([
     ...mapCityNameByKey.value.entries(),
     ...cityData.map((it) => [it.name, it.cityName] as const),

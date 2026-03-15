@@ -142,6 +142,40 @@ describe('MapPage', () => {
     wrapper.unmount()
   })
 
+  it('ignores unmapped rows when computing series and visualMap range', async () => {
+    stubFetch({
+      apiItems: [
+        {
+          adcode: '440300',
+          province: '广东省',
+          city: '深圳市',
+          lat: 22.5431,
+          lng: 114.0579,
+          value: 5,
+        },
+        {
+          adcode: 'unknown',
+          province: '广东省',
+          city: '未知城市',
+          lat: 0,
+          lng: 0,
+          value: 999999,
+        },
+      ],
+    })
+
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    expect(lastChartOption?.series?.[0]?.data).toEqual([
+      expect.objectContaining({ name: '440300', cityName: '深圳市', value: 5 }),
+    ])
+    expect(lastChartOption?.visualMap?.min).toBe(5)
+    expect(lastChartOption?.visualMap?.max).toBe(6)
+
+    wrapper.unmount()
+  })
+
   it('shows a visible error when geojson loading fails', async () => {
     stubFetch({ geoOK: false })
     const wrapper = mount(MapPage)
