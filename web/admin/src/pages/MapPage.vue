@@ -14,6 +14,7 @@ const loading = ref(false)
 const error = ref('')
 const cityItems = ref<MapPoint[]>([])
 const resolveCityJoinKey = ref<(item: MapPoint) => string>((item) => String(item.adcode || '').trim())
+const mapCityNameByKey = ref<Map<string, string>>(new Map())
 
 const chartEl = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
@@ -34,6 +35,14 @@ async function ensureChinaMap() {
     const geoJSON = await rsp.json()
     geoJSON.features = normalizeCityGeoFeatures(Array.isArray(geoJSON?.features) ? geoJSON.features : [])
     resolveCityJoinKey.value = createCityJoinKeyResolver(geoJSON.features)
+    mapCityNameByKey.value = new Map(
+      geoJSON.features.map((feature: any) => {
+        const p = feature?.properties || {}
+        const key = String(p.city_key || '').trim()
+        const name = String(p.city_name || p.city || '').trim()
+        return [key, name] as const
+      }),
+    )
     echarts.registerMap(CHINA_MAP_NAME, geoJSON)
     mapReady = true
   })()
@@ -71,7 +80,10 @@ function render() {
     cityName: item.city,
     value: Number(item.value) || 0,
   }))
-  const cityNameByKey = new Map(cityData.map((it) => [it.name, it.cityName]))
+  const cityNameByKey = new Map([
+    ...mapCityNameByKey.value.entries(),
+    ...cityData.map((it) => [it.name, it.cityName] as const),
+  ])
   const values = cityData.map((item) => item.value)
   const min = values.length > 0 ? Math.min(...values) : 0
   const max = values.length > 0 ? Math.max(...values) : 1

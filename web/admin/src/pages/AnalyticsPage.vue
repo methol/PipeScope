@@ -82,6 +82,7 @@ async function search() {
     }
     items.value = all
   } catch (e) {
+    items.value = []
     error.value = e instanceof Error ? e.message : 'unknown error'
   } finally {
     loading.value = false

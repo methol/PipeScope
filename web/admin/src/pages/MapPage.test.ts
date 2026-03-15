@@ -1,10 +1,24 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+let lastChartOption: any = null
+
+vi.mock('echarts', () => ({
+  init: vi.fn(() => ({
+    setOption: (opt: any) => {
+      lastChartOption = opt
+    },
+    resize: vi.fn(),
+    dispose: vi.fn(),
+  })),
+  registerMap: vi.fn(),
+}))
+
 import MapPage from './MapPage.vue'
 
 const geoJSON = {
   type: 'FeatureCollection',
-  features: [{ properties: { province: '广东省', city: '深圳市' } }],
+  features: [{ properties: { province: '广东省', city: '深圳市', adcode: '440300' } }],
 }
 
 function stubFetch(options?: {
@@ -63,6 +77,11 @@ async function flushPage() {
 
 describe('MapPage', () => {
   beforeEach(() => {
+    lastChartOption = null
+    Object.defineProperty(window.navigator, 'userAgent', {
+      value: 'unit-test',
+      configurable: true,
+    })
     stubFetch()
   })
 
@@ -106,6 +125,19 @@ describe('MapPage', () => {
     const calls = (fetch as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]))
     expect(calls.some((call) => call.includes('metric=bytes'))).toBe(true)
     expect(wrapper.text()).toContain('2.00 KB')
+
+    wrapper.unmount()
+  })
+
+  it('shows readable city name in tooltip for no-data regions', async () => {
+    stubFetch({ apiItems: [] })
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    expect(lastChartOption?.tooltip?.formatter).toBeTypeOf('function')
+    const tooltip = String(lastChartOption.tooltip.formatter({ name: '440300' }))
+    expect(tooltip).toContain('深圳市')
+    expect(tooltip).not.toContain('440300<br/>')
 
     wrapper.unmount()
   })
