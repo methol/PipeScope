@@ -57,6 +57,9 @@ func staticHandler() nethttp.Handler {
 			trimmed = "index.html"
 		}
 		if _, err := fs.Stat(staticFS, trimmed); err == nil {
+			if tryServePrecompressed(w, r, staticFS, trimmed) {
+				return
+			}
 			fileServer.ServeHTTP(w, r)
 			return
 		}
@@ -65,4 +68,35 @@ func staticHandler() nethttp.Handler {
 		r2.URL.Path = "/index.html"
 		fileServer.ServeHTTP(w, r2)
 	})
+}
+
+func tryServePrecompressed(w nethttp.ResponseWriter, r *nethttp.Request, staticFS fs.FS, trimmed string) bool {
+	accept := r.Header.Get("Accept-Encoding")
+	if strings.Contains(accept, "br") {
+		if _, err := fs.Stat(staticFS, trimmed+".br"); err == nil {
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = "/" + trimmed + ".br"
+			w.Header().Set("Content-Encoding", "br")
+			w.Header().Add("Vary", "Accept-Encoding")
+			if strings.HasSuffix(trimmed, ".geojson") {
+				w.Header().Set("Content-Type", "application/geo+json; charset=utf-8")
+			}
+			nethttp.FileServer(nethttp.FS(staticFS)).ServeHTTP(w, r2)
+			return true
+		}
+	}
+	if strings.Contains(accept, "gzip") {
+		if _, err := fs.Stat(staticFS, trimmed+".gz"); err == nil {
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = "/" + trimmed + ".gz"
+			w.Header().Set("Content-Encoding", "gzip")
+			w.Header().Add("Vary", "Accept-Encoding")
+			if strings.HasSuffix(trimmed, ".geojson") {
+				w.Header().Set("Content-Type", "application/geo+json; charset=utf-8")
+			}
+			nethttp.FileServer(nethttp.FS(staticFS)).ServeHTTP(w, r2)
+			return true
+		}
+	}
+	return false
 }
