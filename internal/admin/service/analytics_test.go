@@ -117,6 +117,38 @@ func TestAnalyticsFilters(t *testing.T) {
 	}
 }
 
+func TestAnalyticsAvgDurationPreservesDecimal(t *testing.T) {
+	db := openTempDB(t)
+	store := sqlitestore.New(db)
+	if err := store.InitSchema(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	nowMS := now.UnixMilli()
+	seedConnEventWithStatus(t, db, seedEventWithStatus{seedEvent: seedEvent{RuleID: "r1", Province: "湖北", City: "武汉", TotalBytes: 100, StartTS: nowMS - int64((5*time.Minute)/time.Millisecond)}, Status: "ok", DurationMS: 20681})
+	seedConnEventWithStatus(t, db, seedEventWithStatus{seedEvent: seedEvent{RuleID: "r1", Province: "湖北", City: "武汉", TotalBytes: 80, StartTS: nowMS - int64((4*time.Minute)/time.Millisecond)}, Status: "ok", DurationMS: 20682})
+
+	svc := New(db)
+	svc.SetNowFunc(func() time.Time { return now })
+
+	res, err := svc.Analytics(context.Background(), AnalyticsQuery{
+		Window:   1 * time.Hour,
+		Province: "湖北",
+		TopN:     10,
+	})
+	if err != nil {
+		t.Fatalf("Analytics with decimal avg duration should not fail: %v", err)
+	}
+
+	if res.Overview.ConnCount != 2 {
+		t.Fatalf("unexpected conn count: %+v", res.Overview)
+	}
+	if got := float64(res.Overview.AvgDurationMS); got != 20681.5 {
+		t.Fatalf("unexpected avg_duration_ms: got=%v want=20681.5", got)
+	}
+}
+
 type seedEventWithStatus struct {
 	seedEvent
 	Status     string

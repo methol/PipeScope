@@ -89,11 +89,11 @@ type Overview struct {
 }
 
 type AnalyticsOverview struct {
-	ConnCount     int64 `json:"conn_count"`
-	TotalBytes    int64 `json:"total_bytes"`
-	AvgDurationMS int64 `json:"avg_duration_ms"`
-	ActiveRules   int64 `json:"active_rules"`
-	ActiveCities  int64 `json:"active_cities"`
+	ConnCount     int64   `json:"conn_count"`
+	TotalBytes    int64   `json:"total_bytes"`
+	AvgDurationMS float64 `json:"avg_duration_ms"`
+	ActiveRules   int64   `json:"active_rules"`
+	ActiveCities  int64   `json:"active_cities"`
 }
 
 type AnalyticsBucket struct {
