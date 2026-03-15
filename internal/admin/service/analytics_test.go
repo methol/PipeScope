@@ -117,7 +117,7 @@ func TestAnalyticsFilters(t *testing.T) {
 	}
 }
 
-func TestAnalyticsAvgDurationDecimalDoesNotFail(t *testing.T) {
+func TestAnalyticsAvgDurationPreservesDecimal(t *testing.T) {
 	db := openTempDB(t)
 	store := sqlitestore.New(db)
 	if err := store.InitSchema(context.Background()); err != nil {
@@ -144,8 +144,8 @@ func TestAnalyticsAvgDurationDecimalDoesNotFail(t *testing.T) {
 	if res.Overview.ConnCount != 2 {
 		t.Fatalf("unexpected conn count: %+v", res.Overview)
 	}
-	if res.Overview.AvgDurationMS != 20681 {
-		t.Fatalf("unexpected avg_duration_ms: got=%d want=20681", res.Overview.AvgDurationMS)
+	if got := float64(res.Overview.AvgDurationMS); got != 20681.5 {
+		t.Fatalf("unexpected avg_duration_ms: got=%v want=20681.5", got)
 	}
 }
 

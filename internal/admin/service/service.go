@@ -320,7 +320,7 @@ func (s *Service) Analytics(ctx context.Context, q AnalyticsQuery) (AnalyticsRes
 SELECT
 	COUNT(*) AS conn_count,
 	COALESCE(SUM(total_bytes), 0) AS total_bytes,
-	CAST(COALESCE(AVG(duration_ms), 0) AS INTEGER) AS avg_duration_ms,
+	COALESCE(AVG(duration_ms), 0) AS avg_duration_ms,
 	COUNT(DISTINCT CASE WHEN rule_id != '' THEN rule_id END) AS active_rules,
 	COUNT(DISTINCT CASE WHEN city != '' THEN COALESCE(NULLIF(province, ''), '未知') || '-' || city END) AS active_cities
 FROM conn_events
