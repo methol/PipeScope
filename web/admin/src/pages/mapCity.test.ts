@@ -2,15 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { cityKey, createCityJoinKeyResolver, normalizeAdcode6, normalizeCityGeoFeatures, shouldKeepCityPolygon } from './mapCity'
 
 describe('mapCity helpers', () => {
-  it('normalizes 2/4/6-digit adcode to stable 6-digit code for city key', () => {
+  it('normalizes adcode and always uses 4-digit city key', () => {
     expect(normalizeAdcode6('50')).toBe('500000')
     expect(normalizeAdcode6('5001')).toBe('500100')
     expect(normalizeAdcode6('429004')).toBe('429004')
-    expect(cityKey({ adcode: '469001', province: '海南省', city: '五指山市' })).toBe('469001')
-    expect(cityKey({ adcode: '659001', province: '新疆维吾尔自治区', city: '石河子市' })).toBe('659001')
-    expect(cityKey({ adcode: '429004', province: '湖北省', city: '仙桃市' })).toBe('429004')
-    expect(cityKey({ adcode: '50', province: '重庆市', city: '重庆市' })).toBe('500000')
-    expect(cityKey({ adcode: '5001', province: '重庆市', city: '重庆市' })).toBe('500100')
+    expect(cityKey({ adcode: '469001', province: '海南省', city: '五指山市' })).toBe('4690')
+    expect(cityKey({ adcode: '659001', province: '新疆维吾尔自治区', city: '石河子市' })).toBe('6590')
+    expect(cityKey({ adcode: '429004', province: '湖北省', city: '仙桃市' })).toBe('4290')
+    expect(cityKey({ adcode: '50', province: '重庆市', city: '重庆市' })).toBe('')
+    expect(cityKey({ adcode: '5001', province: '重庆市', city: '重庆市' })).toBe('5001')
   })
 
   it('retains municipality county/district polygons (e.g. Chongqing)', () => {
@@ -39,28 +39,26 @@ describe('mapCity helpers', () => {
     const out = normalizeCityGeoFeatures(features as any[])
     expect(out).toHaveLength(4)
     expect(out.map((f) => f.properties.city_name)).toEqual(['渝中区', '神农架林区', '临高县', '深圳市'])
-    expect(out.map((f) => f.properties.city_key)).toEqual(['500103', '429021', '469024', '440300'])
+    expect(out.map((f) => f.properties.city_key)).toEqual(['5001', '4290', '4690', '4403'])
   })
 
-  it('resolves API adcode join key: keeps 4/6-digit mapping and rejects ambiguous 2-digit province adcode', () => {
+  it('resolves API adcode join key strictly by adcode first 4 digits', () => {
     const features = normalizeCityGeoFeatures([
-      { properties: { province: '广东省', city: '深圳市', adcode: '广东-深圳' } },
       { properties: { province: '海南省', city: '临高县', adcode: '469024' } },
       { properties: { province: '重庆市', city: '重庆城区', adcode: '500100' } },
       { properties: { province: '重庆市', city: '重庆郊县', adcode: '500200' } },
     ] as any[])
 
     const resolve = createCityJoinKeyResolver(features)
-    expect(resolve({ province: '广东省', city: '深圳市', adcode: '440300' })).toBe('广东-深圳')
-    expect(resolve({ province: '海南省', city: '临高县', adcode: '469024' })).toBe('469024')
-    expect(resolve({ province: '北京市', city: '北京市', adcode: '110100' })).toBe('110100')
+    expect(resolve({ province: '海南省', city: '临高县', adcode: '469024' })).toBe('4690')
+    expect(resolve({ province: '北京市', city: '北京市', adcode: '110100' })).toBe('')
 
-    // 2位省级 adcode 不能强制落到城市 key
+    // 2位省级 adcode 不映射到城市 key
     expect(resolve({ province: '广东省', city: '深圳市', adcode: '44' })).toBe('')
 
-    // 4位/6位 adcode 仍应稳定映射
-    expect(resolve({ province: '重庆市', city: '重庆市', adcode: '5001' })).toBe('500100')
-    expect(resolve({ province: '重庆市', city: '重庆市', adcode: '5002' })).toBe('500200')
-    expect(resolve({ province: '重庆市', city: '重庆城区', adcode: '500100' })).toBe('500100')
+    // 4位/6位 adcode 统一落到前4位
+    expect(resolve({ province: '重庆市', city: '重庆市', adcode: '5001' })).toBe('5001')
+    expect(resolve({ province: '重庆市', city: '重庆城区', adcode: '500100' })).toBe('5001')
+    expect(resolve({ province: '重庆市', city: '重庆郊县', adcode: '500200' })).toBe('5002')
   })
 })

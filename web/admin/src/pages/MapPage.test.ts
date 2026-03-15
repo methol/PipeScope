@@ -135,7 +135,7 @@ describe('MapPage', () => {
     await flushPage()
 
     expect(lastChartOption?.tooltip?.formatter).toBeTypeOf('function')
-    const tooltip = String(lastChartOption.tooltip.formatter({ name: '440300' }))
+    const tooltip = String(lastChartOption.tooltip.formatter({ name: '4403' }))
     expect(tooltip).toContain('深圳市')
     expect(tooltip).not.toContain('440300<br/>')
 
@@ -168,7 +168,7 @@ describe('MapPage', () => {
     await flushPage()
 
     expect(lastChartOption?.series?.[0]?.data).toEqual([
-      expect.objectContaining({ name: '440300', cityName: '深圳市', value: 5 }),
+      expect.objectContaining({ name: '4403', cityName: '深圳市', value: 5 }),
     ])
     expect(lastChartOption?.visualMap?.min).toBe(5)
     expect(lastChartOption?.visualMap?.max).toBe(6)
