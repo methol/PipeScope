@@ -19,6 +19,7 @@ type QueryService interface {
 	Overview(ctx context.Context, window time.Duration) (service.Overview, error)
 	ProvinceMap(ctx context.Context, q service.ProvinceQuery) ([]service.MapPoint, error)
 	ProvinceSummary(ctx context.Context, q service.MapQuery) ([]service.ProvinceSummaryPoint, error)
+	Analytics(ctx context.Context, q service.AnalyticsQuery) (service.AnalyticsResult, error)
 }
 
 type handlers struct {
@@ -118,6 +119,24 @@ func (h *handlers) handleOverview(w nethttp.ResponseWriter, r *nethttp.Request) 
 		return
 	}
 	writeJSON(w, nethttp.StatusOK, o)
+}
+
+func (h *handlers) handleAnalytics(w nethttp.ResponseWriter, r *nethttp.Request) {
+	ctx, cancel := h.queryContext(r.Context())
+	defer cancel()
+	result, err := h.svc.Analytics(ctx, service.AnalyticsQuery{
+		Window:   parseWindow(r.URL.Query().Get("window"), 15*time.Minute),
+		RuleID:   r.URL.Query().Get("rule_id"),
+		Province: r.URL.Query().Get("province"),
+		City:     r.URL.Query().Get("city"),
+		Status:   r.URL.Query().Get("status"),
+		TopN:     parseBoundedInt(r.URL.Query().Get("top_n"), 10, 1, 100),
+	})
+	if err != nil {
+		writeQueryError(w, err)
+		return
+	}
+	writeJSON(w, nethttp.StatusOK, result)
 }
 
 func parseWindow(raw string, fallback time.Duration) time.Duration {

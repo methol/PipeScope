@@ -24,6 +24,7 @@ func NewServer(svc QueryService, timeout time.Duration) *Server {
 	mux.HandleFunc("/api/rules", h.handleRules)
 	mux.HandleFunc("/api/sessions", h.handleSessions)
 	mux.HandleFunc("/api/overview", h.handleOverview)
+	mux.HandleFunc("/api/analytics", h.handleAnalytics)
 	mux.Handle("/", staticHandler())
 
 	return &Server{mux: loggingMiddleware(mux)}

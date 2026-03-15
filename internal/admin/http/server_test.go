@@ -100,6 +100,10 @@ func (fakeService) ProvinceSummary(context.Context, service.MapQuery) ([]service
 	return []service.ProvinceSummaryPoint{}, nil
 }
 
+func (fakeService) Analytics(context.Context, service.AnalyticsQuery) (service.AnalyticsResult, error) {
+	return service.AnalyticsResult{}, nil
+}
+
 type timeoutService struct{}
 
 type wrappedTimeoutService struct{}
@@ -134,6 +138,11 @@ func (timeoutService) ProvinceSummary(ctx context.Context, q service.MapQuery) (
 	return nil, ctx.Err()
 }
 
+func (timeoutService) Analytics(ctx context.Context, q service.AnalyticsQuery) (service.AnalyticsResult, error) {
+	<-ctx.Done()
+	return service.AnalyticsResult{}, ctx.Err()
+}
+
 func (wrappedTimeoutService) ChinaMap(ctx context.Context, q service.MapQuery) ([]service.MapPoint, error) {
 	<-ctx.Done()
 	return nil, fmt.Errorf("wrapped: %w", ctx.Err())
@@ -162,6 +171,11 @@ func (wrappedTimeoutService) ProvinceMap(ctx context.Context, q service.Province
 func (wrappedTimeoutService) ProvinceSummary(ctx context.Context, q service.MapQuery) ([]service.ProvinceSummaryPoint, error) {
 	<-ctx.Done()
 	return nil, fmt.Errorf("wrapped: %w", ctx.Err())
+}
+
+func (wrappedTimeoutService) Analytics(ctx context.Context, q service.AnalyticsQuery) (service.AnalyticsResult, error) {
+	<-ctx.Done()
+	return service.AnalyticsResult{}, fmt.Errorf("wrapped: %w", ctx.Err())
 }
 
 func TestSessionsEndpointClampsOversizedOffset(t *testing.T) {
