@@ -2,9 +2,9 @@ WEB_DIR := web/admin
 WEB_DIST := web/dist
 EMBED_STATIC := internal/admin/http/static
 
-.PHONY: test test-go test-web build build-web sync-web fetch-geo-data update-embedded-geo-data run
+.PHONY: test test-go test-web test-geo-size build build-web sync-web fetch-geo-data update-embedded-geo-data optimize-city-geo-data run
 
-test: test-go test-web
+test: test-go test-web test-geo-size
 
 test-go:
 	go test ./... -v
@@ -25,12 +25,21 @@ sync-web:
 	rm -rf $(EMBED_STATIC)
 	mkdir -p $(EMBED_STATIC)
 	cp -R $(WEB_DIR)/dist/* $(EMBED_STATIC)/
+	./scripts/generate-geojson-sidecars.sh $(WEB_DIR)/public/maps/china-cities.geojson
+	./scripts/generate-geojson-sidecars.sh $(WEB_DIST)/maps/china-cities.geojson
+	./scripts/generate-geojson-sidecars.sh $(EMBED_STATIC)/maps/china-cities.geojson
 
 fetch-geo-data:
 	./scripts/fetch-geo-data.sh
 
 update-embedded-geo-data:
 	./scripts/update-embedded-geo-data.sh
+
+optimize-city-geo-data:
+	./scripts/optimize-city-geojson.sh
+
+test-geo-size:
+	./scripts/check-city-geojson-size.sh
 
 run:
 	go run ./cmd/pipescope -config assets/config.example.yaml

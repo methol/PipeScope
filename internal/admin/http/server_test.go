@@ -5,6 +5,7 @@ import (
 	"fmt"
 	nethttp "net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -232,5 +233,43 @@ func TestRulesEndpointTimesOutWrappedServiceError(t *testing.T) {
 
 	if rr.Code != nethttp.StatusGatewayTimeout {
 		t.Fatalf("code=%d want=%d", rr.Code, nethttp.StatusGatewayTimeout)
+	}
+}
+
+func TestStaticGeoJSONServesBrotliWhenPreferred(t *testing.T) {
+	srv := newTestServer(t)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(nethttp.MethodGet, "/maps/china-cities.geojson", nil)
+	req.Header.Set("Accept-Encoding", "gzip;q=0.8, br;q=1")
+
+	srv.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != nethttp.StatusOK {
+		t.Fatalf("code=%d want=%d", rr.Code, nethttp.StatusOK)
+	}
+	if got := rr.Header().Get("Content-Encoding"); got != "br" {
+		t.Fatalf("Content-Encoding=%q want=br", got)
+	}
+	if got := rr.Header().Get("Vary"); !strings.Contains(got, "Accept-Encoding") {
+		t.Fatalf("Vary=%q want contains Accept-Encoding", got)
+	}
+	if got := rr.Header().Get("Content-Type"); !strings.Contains(got, "application/geo+json") {
+		t.Fatalf("Content-Type=%q want geo+json", got)
+	}
+}
+
+func TestStaticGeoJSONSkipsQZeroEncoding(t *testing.T) {
+	srv := newTestServer(t)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(nethttp.MethodGet, "/maps/china-cities.geojson", nil)
+	req.Header.Set("Accept-Encoding", "br;q=0, gzip;q=1")
+
+	srv.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != nethttp.StatusOK {
+		t.Fatalf("code=%d want=%d", rr.Code, nethttp.StatusOK)
+	}
+	if got := rr.Header().Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("Content-Encoding=%q want=gzip", got)
 	}
 }
