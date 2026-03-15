@@ -3,23 +3,26 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { fetchSessions, type SessionItem } from '../api/client'
 import { formatBytes } from '../utils/format'
 
-const windowText = ref('15m')
 const ruleID = ref('')
 const items = ref<SessionItem[]>([])
 const error = ref('')
+const loading = ref(false)
 let timer: number | null = null
 
 async function load() {
   try {
+    loading.value = true
     error.value = ''
     items.value = await fetchSessions({
-      window: windowText.value,
+      window: '5m',
       rule_id: ruleID.value,
       limit: '100',
       offset: '0',
     })
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'unknown error'
+  } finally {
+    loading.value = false
   }
 }
 
@@ -38,19 +41,8 @@ onUnmounted(() => {
 <template>
   <section class="panel">
     <div class="panel-header">
-      <h2>会话明细</h2>
+      <h2>实时会话</h2>
       <div class="filters">
-        <label>
-          窗口
-          <select v-model="windowText" @change="load">
-            <option value="5m">5m</option>
-            <option value="15m">15m</option>
-            <option value="1h">1h</option>
-            <option value="1d">1d</option>
-            <option value="1w">1w</option>
-            <option value="1mo">1mo</option>
-          </select>
-        </label>
         <label>
           Rule
           <input v-model="ruleID" placeholder="可选" @change="load" />
@@ -58,6 +50,8 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <p class="meta">固定窗口：5m · 每 5 秒自动刷新</p>
+    <p v-if="loading" class="meta">加载中...</p>
     <p v-if="error" class="error">{{ error }}</p>
 
     <table class="table">

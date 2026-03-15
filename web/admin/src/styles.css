@@ -145,6 +145,40 @@ input {
   justify-content: space-between;
 }
 
+.btn {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  min-height: 34px;
+  padding: 6px 12px;
+  background: #fff;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.analytics-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.analytics-card {
+  background: #fff;
+  border: 1px solid #eef2f6;
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.analytics-card h3 {
+  margin: 0 0 8px;
+}
+
+.analytics-card p,
+.analytics-card li {
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;

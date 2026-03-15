@@ -1,95 +1,29 @@
 <script setup lang="ts">
 import * as echarts from 'echarts'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { fetchChinaMap, fetchProvinceSummary, type MapPoint, type ProvinceSummaryPoint } from '../api/client'
+import { fetchChinaMap, type MapPoint } from '../api/client'
 import { formatBytes } from '../utils/format'
+import { createCityJoinKeyResolver, normalizeCityGeoFeatures } from './mapCity'
 
-const CHINA_MAP_NAME = 'china-counties'
-const CHINA_GEOJSON_URL = '/maps/china-counties.geojson'
+const CHINA_MAP_NAME = 'china-cities'
+const CHINA_GEOJSON_URL = '/maps/china-cities.geojson'
 
-const windowText = ref('15m')
+const windowText = ref('1h')
 const metric = ref('conn')
 const loading = ref(false)
 const error = ref('')
 const cityItems = ref<MapPoint[]>([])
-const provinceItems = ref<ProvinceSummaryPoint[]>([])
-const mapProvinceNames = ref<Set<string>>(new Set())
+const resolveCityJoinKey = ref<(item: MapPoint) => string>((item) => String(item.adcode || '').trim())
+const mapCityNameByKey = ref<Map<string, string>>(new Map())
 
 const chartEl = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
-let timer: number | null = null
 let mapReady = false
 let mapLoading: Promise<void> | null = null
 
-const title = computed(() => (metric.value === 'bytes' ? '城市流量热度（Grid）' : '城市连接热度（Grid）'))
+const title = computed(() => (metric.value === 'bytes' ? '城市流量热度（市级边界）' : '城市连接热度（市级边界）'))
 const emptyHint = computed(() => (!loading.value && !error.value && cityItems.value.length === 0 ? '当前窗口暂无城市指标数据' : ''))
 const displayValue = (v: number) => (metric.value === 'bytes' ? formatBytes(v) : String(v))
-
-const PROVINCE_CANONICAL_MAP: Record<string, string> = {
-  北京: '北京市',
-  天津: '天津市',
-  上海: '上海市',
-  重庆: '重庆市',
-  内蒙古: '内蒙古自治区',
-  广西: '广西壮族自治区',
-  宁夏: '宁夏回族自治区',
-  新疆: '新疆维吾尔自治区',
-  西藏: '西藏自治区',
-  香港: '香港特别行政区',
-  澳门: '澳门特别行政区',
-  新疆生产建设兵团: '新疆维吾尔自治区',
-}
-
-function canonicalProvinceName(raw: string): string {
-  const name = (raw || '').trim()
-  if (!name) return '未知'
-  if (PROVINCE_CANONICAL_MAP[name]) return PROVINCE_CANONICAL_MAP[name]
-
-  const normalized = name
-    .replace(/省$/, '')
-    .replace(/市$/, '')
-    .replace(/壮族自治区$/, '')
-    .replace(/回族自治区$/, '')
-    .replace(/维吾尔自治区$/, '')
-    .replace(/特别行政区$/, '')
-    .replace(/自治区$/, '')
-
-  return PROVINCE_CANONICAL_MAP[normalized] ?? `${normalized}省`
-}
-
-function provinceColor(name: string): string {
-  let hash = 0
-  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0
-  const hue = hash % 360
-  return `hsl(${hue} 45% 80%)`
-}
-
-function provinceRegions(points: ProvinceSummaryPoint[]) {
-  const dataByProvince = new Map<string, number>()
-  for (const it of points) {
-    const name = canonicalProvinceName(it.province)
-    dataByProvince.set(name, (dataByProvince.get(name) ?? 0) + it.value)
-  }
-  return Array.from(dataByProvince.entries()).map(([name, value]) => ({
-    name,
-    value,
-    itemStyle: { areaColor: provinceColor(name) },
-  }))
-}
-
-const provinceCoverage = computed(() => {
-  const regions = provinceRegions(provinceItems.value)
-  if (regions.length === 0) return '省份命中率: 0/0'
-  const total = regions.length
-  const hit = regions.filter((item) => mapProvinceNames.value.has(item.name)).length
-  return `省份命中率: ${hit}/${total}`
-})
-
-function cityHeatData(data: MapPoint[]) {
-  return data
-    .filter((item) => Number.isFinite(item.lng) && Number.isFinite(item.lat))
-    .map((item) => [item.lng, item.lat, item.value] as [number, number, number])
-}
 
 async function ensureChinaMap() {
   if (mapReady) return
@@ -99,12 +33,16 @@ async function ensureChinaMap() {
     const rsp = await fetch(CHINA_GEOJSON_URL)
     if (!rsp.ok) throw new Error(`底图加载失败: ${rsp.status}`)
     const geoJSON = await rsp.json()
-    const provinceSet = new Set<string>()
-    for (const feature of Array.isArray(geoJSON?.features) ? geoJSON.features : []) {
-      const province = String(feature?.properties?.province || '').trim()
-      if (province) provinceSet.add(province)
-    }
-    mapProvinceNames.value = provinceSet
+    geoJSON.features = normalizeCityGeoFeatures(Array.isArray(geoJSON?.features) ? geoJSON.features : [])
+    resolveCityJoinKey.value = createCityJoinKeyResolver(geoJSON.features)
+    mapCityNameByKey.value = new Map(
+      geoJSON.features.map((feature: any) => {
+        const p = feature?.properties || {}
+        const key = String(p.city_key || '').trim()
+        const name = String(p.city_name || p.city || '').trim()
+        return [key, name] as const
+      }),
+    )
     echarts.registerMap(CHINA_MAP_NAME, geoJSON)
     mapReady = true
   })()
@@ -121,21 +59,10 @@ async function load() {
   error.value = ''
   try {
     await ensureChinaMap()
-
-    const cities = await fetchChinaMap({ window: windowText.value, metric: metric.value })
-    cityItems.value = cities
-
-    try {
-      provinceItems.value = await fetchProvinceSummary({ window: windowText.value, metric: metric.value })
-    } catch (e) {
-      provinceItems.value = []
-      error.value = e instanceof Error ? `省级汇总加载失败（已降级展示城市热力）: ${e.message}` : '省级汇总加载失败（已降级展示城市热力）'
-    }
-
+    cityItems.value = await fetchChinaMap({ window: windowText.value, metric: metric.value })
     render()
   } catch (e) {
     cityItems.value = []
-    provinceItems.value = []
     error.value = e instanceof Error ? e.message : 'unknown error'
     render()
   } finally {
@@ -148,8 +75,18 @@ function render() {
   if (typeof window !== 'undefined' && /jsdom/i.test(window.navigator.userAgent)) return
   if (!chart) chart = echarts.init(chartEl.value, undefined, { renderer: 'canvas' })
 
-  const heatData = cityHeatData(cityItems.value)
-  const values = heatData.map((item) => Number(item[2]) || 0)
+  const cityData = cityItems.value
+    .map((item) => ({
+      name: resolveCityJoinKey.value(item),
+      cityName: item.city,
+      value: Number(item.value) || 0,
+    }))
+    .filter((item) => item.name && mapCityNameByKey.value.has(item.name))
+  const cityNameByKey = new Map([
+    ...mapCityNameByKey.value.entries(),
+    ...cityData.map((it) => [it.name, it.cityName] as const),
+  ])
+  const values = cityData.map((item) => item.value)
   const min = values.length > 0 ? Math.min(...values) : 0
   const max = values.length > 0 ? Math.max(...values) : 1
 
@@ -157,16 +94,11 @@ function render() {
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'item',
-      formatter: (params: { seriesType?: string; data?: any; name?: string; value?: any }) => {
-        if (params.seriesType === 'heatmap') {
-          const val = Array.isArray(params.value) ? Number(params.value[2] ?? 0) : 0
-          return `${title.value}: ${displayValue(val)}`
-        }
-        if (params.seriesType === 'map') {
-          const val = Number(params.data?.value ?? 0)
-          return `${params.name}<br/>${title.value}: ${displayValue(val)}`
-        }
-        return params.name || ''
+      formatter: (params: { data?: any; name?: string; value?: any }) => {
+        const key = String(params.data?.name || params.name || '')
+        const cityName = String(params.data?.cityName || cityNameByKey.get(key) || key || '未知城市').trim()
+        const val = Number(params.data?.value ?? params.value ?? 0)
+        return `${cityName}<br/>${title.value}: ${displayValue(val)}`
       },
     },
     visualMap: {
@@ -181,38 +113,26 @@ function render() {
       },
       text: ['高', '低'],
     },
-    geo: {
-      map: CHINA_MAP_NAME,
-      nameProperty: 'province',
-      roam: true,
-      silent: false,
-      itemStyle: {
-        areaColor: '#f4f8ff',
-        borderColor: '#99afc9',
-        borderWidth: 0.7,
-      },
-      emphasis: { itemStyle: { areaColor: '#d8e7fb' } },
-      regions: provinceRegions(provinceItems.value),
-    },
     series: [
       {
-        name: '省份底色',
+        name: title.value,
         type: 'map',
         map: CHINA_MAP_NAME,
-        nameProperty: 'province',
-        geoIndex: 0,
-        data: provinceRegions(provinceItems.value),
-        silent: true,
-        zlevel: 0,
-      },
-      {
-        name: title.value,
-        type: 'heatmap',
-        coordinateSystem: 'geo',
-        data: heatData,
-        pointSize: 8,
-        blurSize: 18,
-        zlevel: 1,
+        nameProperty: 'city_key',
+        roam: true,
+        data: cityData,
+        emphasis: {
+          label: {
+            show: true,
+            formatter: (x: { data?: any; name?: string }) => String(x.data?.cityName || x.name || '').split('-').pop(),
+          },
+          itemStyle: { areaColor: '#8db5f2' },
+        },
+        itemStyle: {
+          areaColor: '#f4f8ff',
+          borderColor: '#99afc9',
+          borderWidth: 0.7,
+        },
       },
     ],
   })
@@ -225,14 +145,10 @@ watch([windowText, metric], () => {
 onMounted(async () => {
   await nextTick()
   await load()
-  timer = window.setInterval(() => {
-    void load()
-  }, 5000)
   window.addEventListener('resize', onResize)
 })
 
 onUnmounted(() => {
-  if (timer !== null) window.clearInterval(timer)
   window.removeEventListener('resize', onResize)
   if (chart) {
     chart.dispose()
@@ -248,12 +164,11 @@ function onResize() {
 <template>
   <section class="panel">
     <div class="panel-header">
-      <h2>中国地图视图（城市级）</h2>
+      <h2>中国地图视图（市级）</h2>
       <div class="filters">
         <label>
           窗口
           <select v-model="windowText">
-            <option value="5m">5m</option>
             <option value="15m">15m</option>
             <option value="1h">1h</option>
             <option value="1d">1d</option>
@@ -268,10 +183,11 @@ function onResize() {
             <option value="bytes">字节数</option>
           </select>
         </label>
+        <button class="btn" @click="load">手动刷新</button>
       </div>
     </div>
 
-    <p class="meta">{{ title }} · 省份低饱和分色 · {{ provinceCoverage }} · 每 5 秒自动刷新</p>
+    <p class="meta">{{ title }} · 分析型页面（不自动刷新）</p>
     <p v-if="loading" class="meta">加载中...</p>
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="emptyHint" class="meta">{{ emptyHint }}</p>
@@ -280,7 +196,7 @@ function onResize() {
 
     <ul class="city-list">
       <li v-for="item in cityItems.slice(0, 8)" :key="item.adcode + item.city">
-        <span>{{ item.province }}{{ item.city }}</span>
+        <span>{{ item.city }}</span>
         <strong>{{ displayValue(item.value) }}</strong>
       </li>
     </ul>
