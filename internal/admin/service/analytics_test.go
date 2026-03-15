@@ -44,6 +44,40 @@ func TestAnalyticsAggregation(t *testing.T) {
 	}
 }
 
+func TestAnalyticsOptions(t *testing.T) {
+	db := openTempDB(t)
+	store := sqlitestore.New(db)
+	if err := store.InitSchema(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	nowMS := now.UnixMilli()
+	seedConnEventWithStatus(t, db, seedEventWithStatus{seedEvent: seedEvent{RuleID: "r1", Province: "广东", City: "深圳", TotalBytes: 100, StartTS: nowMS - int64((5*time.Minute)/time.Millisecond)}, Status: "ok", DurationMS: 20})
+	seedConnEventWithStatus(t, db, seedEventWithStatus{seedEvent: seedEvent{RuleID: "r2", Province: "广东", City: "珠海", TotalBytes: 80, StartTS: nowMS - int64((4*time.Minute)/time.Millisecond)}, Status: "err", DurationMS: 60})
+	seedConnEventWithStatus(t, db, seedEventWithStatus{seedEvent: seedEvent{RuleID: "r3", Province: "浙江", City: "杭州", TotalBytes: 200, StartTS: nowMS - int64((3*time.Minute)/time.Millisecond)}, Status: "ok", DurationMS: 40})
+
+	svc := New(db)
+	svc.SetNowFunc(func() time.Time { return now })
+
+	res, err := svc.AnalyticsOptions(context.Background(), AnalyticsOptionsQuery{Window: 15 * time.Minute})
+	if err != nil {
+		t.Fatalf("AnalyticsOptions: %v", err)
+	}
+
+	if len(res.Rules) != 3 || len(res.Provinces) != 2 || len(res.Cities) != 3 || len(res.Statuses) != 2 {
+		t.Fatalf("unexpected options: %+v", res)
+	}
+
+	filtered, err := svc.AnalyticsOptions(context.Background(), AnalyticsOptionsQuery{Window: 15 * time.Minute, Province: "广东"})
+	if err != nil {
+		t.Fatalf("AnalyticsOptions with province filter: %v", err)
+	}
+	if len(filtered.Cities) != 2 {
+		t.Fatalf("unexpected linked cities: %+v", filtered.Cities)
+	}
+}
+
 func TestAnalyticsFilters(t *testing.T) {
 	db := openTempDB(t)
 	store := sqlitestore.New(db)

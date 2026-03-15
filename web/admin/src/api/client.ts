@@ -55,6 +55,18 @@ export interface AnalyticsResult {
   top_rules: AnalyticsBucket[]
 }
 
+export interface AnalyticsCityOption {
+  province: string
+  city: string
+}
+
+export interface AnalyticsOptions {
+  rules: string[]
+  provinces: string[]
+  cities: AnalyticsCityOption[]
+  statuses: string[]
+}
+
 async function fetchJSON<T>(url: string): Promise<T> {
   const rsp = await fetch(url)
   if (!rsp.ok) {
@@ -132,4 +144,20 @@ export async function fetchAnalytics(params: {
   if (params.status) q.set('status', params.status)
   if (params.top_n) q.set('top_n', params.top_n)
   return fetchJSON<AnalyticsResult>(`/api/analytics?${q.toString()}`)
+}
+
+export async function fetchAnalyticsOptions(params: {
+  window: string
+  rule_id?: string
+  province?: string
+  city?: string
+  status?: string
+}): Promise<AnalyticsOptions> {
+  const q = new URLSearchParams()
+  q.set('window', params.window)
+  if (params.rule_id) q.set('rule_id', params.rule_id)
+  if (params.province) q.set('province', params.province)
+  if (params.city) q.set('city', params.city)
+  if (params.status) q.set('status', params.status)
+  return fetchJSON<AnalyticsOptions>(`/api/analytics/options?${q.toString()}`)
 }

@@ -104,6 +104,10 @@ func (fakeService) Analytics(context.Context, service.AnalyticsQuery) (service.A
 	return service.AnalyticsResult{}, nil
 }
 
+func (fakeService) AnalyticsOptions(context.Context, service.AnalyticsOptionsQuery) (service.AnalyticsOptions, error) {
+	return service.AnalyticsOptions{}, nil
+}
+
 type timeoutService struct{}
 
 type wrappedTimeoutService struct{}
@@ -176,6 +180,16 @@ func (wrappedTimeoutService) ProvinceSummary(ctx context.Context, q service.MapQ
 func (wrappedTimeoutService) Analytics(ctx context.Context, q service.AnalyticsQuery) (service.AnalyticsResult, error) {
 	<-ctx.Done()
 	return service.AnalyticsResult{}, fmt.Errorf("wrapped: %w", ctx.Err())
+}
+
+func (timeoutService) AnalyticsOptions(ctx context.Context, q service.AnalyticsOptionsQuery) (service.AnalyticsOptions, error) {
+	<-ctx.Done()
+	return service.AnalyticsOptions{}, ctx.Err()
+}
+
+func (wrappedTimeoutService) AnalyticsOptions(ctx context.Context, q service.AnalyticsOptionsQuery) (service.AnalyticsOptions, error) {
+	<-ctx.Done()
+	return service.AnalyticsOptions{}, fmt.Errorf("wrapped: %w", ctx.Err())
 }
 
 func TestSessionsEndpointClampsOversizedOffset(t *testing.T) {

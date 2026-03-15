@@ -20,6 +20,7 @@ type QueryService interface {
 	ProvinceMap(ctx context.Context, q service.ProvinceQuery) ([]service.MapPoint, error)
 	ProvinceSummary(ctx context.Context, q service.MapQuery) ([]service.ProvinceSummaryPoint, error)
 	Analytics(ctx context.Context, q service.AnalyticsQuery) (service.AnalyticsResult, error)
+	AnalyticsOptions(ctx context.Context, q service.AnalyticsOptionsQuery) (service.AnalyticsOptions, error)
 }
 
 type handlers struct {
@@ -131,6 +132,23 @@ func (h *handlers) handleAnalytics(w nethttp.ResponseWriter, r *nethttp.Request)
 		City:     r.URL.Query().Get("city"),
 		Status:   r.URL.Query().Get("status"),
 		TopN:     parseBoundedInt(r.URL.Query().Get("top_n"), 10, 1, 100),
+	})
+	if err != nil {
+		writeQueryError(w, err)
+		return
+	}
+	writeJSON(w, nethttp.StatusOK, result)
+}
+
+func (h *handlers) handleAnalyticsOptions(w nethttp.ResponseWriter, r *nethttp.Request) {
+	ctx, cancel := h.queryContext(r.Context())
+	defer cancel()
+	result, err := h.svc.AnalyticsOptions(ctx, service.AnalyticsOptionsQuery{
+		Window:   parseWindow(r.URL.Query().Get("window"), 15*time.Minute),
+		RuleID:   r.URL.Query().Get("rule_id"),
+		Province: r.URL.Query().Get("province"),
+		City:     r.URL.Query().Get("city"),
+		Status:   r.URL.Query().Get("status"),
 	})
 	if err != nil {
 		writeQueryError(w, err)

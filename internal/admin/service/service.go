@@ -190,6 +190,120 @@ ORDER BY v DESC
 	return out, rows.Err()
 }
 
+func (s *Service) AnalyticsOptions(ctx context.Context, q AnalyticsOptionsQuery) (AnalyticsOptions, error) {
+	result := AnalyticsOptions{
+		Rules:     []string{},
+		Provinces: []string{},
+		Cities:    []AnalyticsCityRef{},
+		Statuses:  []string{},
+	}
+	windowStart := s.windowStartMS(q.Window)
+	ruleID := q.RuleID
+	province := q.Province
+	city := q.City
+	status := q.Status
+
+	ruleRows, err := s.db.QueryContext(ctx, `
+SELECT DISTINCT COALESCE(NULLIF(rule_id, ''), 'unknown') AS rule
+FROM conn_events
+WHERE start_ts >= ?
+  AND (? = '' OR province LIKE '%' || ? || '%')
+  AND (? = '' OR city LIKE '%' || ? || '%')
+  AND (? = '' OR status = ?)
+ORDER BY rule
+`, windowStart, province, province, city, city, status, status)
+	if err != nil {
+		return result, err
+	}
+	defer ruleRows.Close()
+	for ruleRows.Next() {
+		var v string
+		if err := ruleRows.Scan(&v); err != nil {
+			return result, err
+		}
+		result.Rules = append(result.Rules, v)
+	}
+	if err := ruleRows.Err(); err != nil {
+		return result, err
+	}
+
+	provinceRows, err := s.db.QueryContext(ctx, `
+SELECT DISTINCT COALESCE(NULLIF(province, ''), '未知') AS province
+FROM conn_events
+WHERE start_ts >= ?
+  AND (? = '' OR rule_id = ?)
+  AND (? = '' OR city LIKE '%' || ? || '%')
+  AND (? = '' OR status = ?)
+ORDER BY province
+`, windowStart, ruleID, ruleID, city, city, status, status)
+	if err != nil {
+		return result, err
+	}
+	defer provinceRows.Close()
+	for provinceRows.Next() {
+		var v string
+		if err := provinceRows.Scan(&v); err != nil {
+			return result, err
+		}
+		result.Provinces = append(result.Provinces, v)
+	}
+	if err := provinceRows.Err(); err != nil {
+		return result, err
+	}
+
+	cityRows, err := s.db.QueryContext(ctx, `
+SELECT DISTINCT
+	COALESCE(NULLIF(province, ''), '未知') AS province,
+	COALESCE(NULLIF(city, ''), '未知') AS city
+FROM conn_events
+WHERE start_ts >= ?
+  AND (? = '' OR rule_id = ?)
+  AND (? = '' OR COALESCE(NULLIF(province, ''), '未知') = ?)
+  AND (? = '' OR status = ?)
+ORDER BY province, city
+`, windowStart, ruleID, ruleID, province, province, status, status)
+	if err != nil {
+		return result, err
+	}
+	defer cityRows.Close()
+	for cityRows.Next() {
+		var item AnalyticsCityRef
+		if err := cityRows.Scan(&item.Province, &item.City); err != nil {
+			return result, err
+		}
+		result.Cities = append(result.Cities, item)
+	}
+	if err := cityRows.Err(); err != nil {
+		return result, err
+	}
+
+	statusRows, err := s.db.QueryContext(ctx, `
+SELECT DISTINCT COALESCE(NULLIF(status, ''), 'unknown') AS status
+FROM conn_events
+WHERE start_ts >= ?
+  AND (? = '' OR rule_id = ?)
+  AND (? = '' OR province LIKE '%' || ? || '%')
+  AND (? = '' OR city LIKE '%' || ? || '%')
+ORDER BY status
+`, windowStart, ruleID, ruleID, province, province, city, city)
+	if err != nil {
+		return result, err
+	}
+	defer statusRows.Close()
+	for statusRows.Next() {
+		var v string
+		if err := statusRows.Scan(&v); err != nil {
+			return result, err
+		}
+		result.Statuses = append(result.Statuses, v)
+	}
+	if err := statusRows.Err(); err != nil {
+		return result, err
+	}
+
+	return result, nil
+}
+
 func (s *Service) Analytics(ctx context.Context, q AnalyticsQuery) (AnalyticsResult, error) {
 	result := AnalyticsResult{}
 	windowStart := s.windowStartMS(q.Window)
