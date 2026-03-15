@@ -3,6 +3,7 @@ import * as echarts from 'echarts'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { fetchChinaMap, type MapPoint } from '../api/client'
 import { formatBytes } from '../utils/format'
+import { cityKey, normalizeCityGeoFeatures } from './mapCity'
 
 const CHINA_MAP_NAME = 'china-cities'
 const CHINA_GEOJSON_URL = '/maps/china-cities.geojson'
@@ -22,15 +23,6 @@ const title = computed(() => (metric.value === 'bytes' ? '城市流量热度（�
 const emptyHint = computed(() => (!loading.value && !error.value && cityItems.value.length === 0 ? '当前窗口暂无城市指标数据' : ''))
 const displayValue = (v: number) => (metric.value === 'bytes' ? formatBytes(v) : String(v))
 
-function cityKey(item: { province?: string; city?: string; adcode?: string }) {
-  const adcode = String(item.adcode || '').trim()
-  if (/^\d{4,}$/.test(adcode)) return adcode.slice(0, 4)
-
-  const province = String(item.province || '').trim().replace(/(省|市|壮族自治区|回族自治区|维吾尔自治区|自治区|特别行政区)$/g, '')
-  const city = String(item.city || '').trim().replace(/(市|地区|自治州|盟|县|区|林区)$/g, '')
-  return `${province}-${city}`
-}
-
 async function ensureChinaMap() {
   if (mapReady) return
   if (mapLoading) return mapLoading
@@ -39,19 +31,7 @@ async function ensureChinaMap() {
     const rsp = await fetch(CHINA_GEOJSON_URL)
     if (!rsp.ok) throw new Error(`底图加载失败: ${rsp.status}`)
     const geoJSON = await rsp.json()
-    const filteredFeatures: any[] = []
-    for (const feature of Array.isArray(geoJSON?.features) ? geoJSON.features : []) {
-      const p = feature?.properties || {}
-      const rawCity = String(p.city || '').trim()
-      if (!rawCity) continue
-      // 过滤县区/林区（仅保留地级市/自治州/地区/盟 + 直辖市）
-      if (/(县|区|林区)$/.test(rawCity) && !/(市|自治州|地区|盟)$/.test(rawCity)) continue
-      p.city_key = cityKey({ province: p.province, city: p.city, adcode: p.adcode })
-      p.city_name = rawCity
-      feature.properties = p
-      filteredFeatures.push(feature)
-    }
-    geoJSON.features = filteredFeatures
+    geoJSON.features = normalizeCityGeoFeatures(Array.isArray(geoJSON?.features) ? geoJSON.features : [])
     echarts.registerMap(CHINA_MAP_NAME, geoJSON)
     mapReady = true
   })()
