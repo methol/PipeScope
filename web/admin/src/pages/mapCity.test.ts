@@ -42,7 +42,7 @@ describe('mapCity helpers', () => {
     expect(out.map((f) => f.properties.city_key)).toEqual(['500103', '429021', '469024', '440300'])
   })
 
-  it('resolves API adcode join key to map key space consistently for 2/4/6-digit inputs (including Chongqing)', () => {
+  it('resolves API adcode join key: keeps 4/6-digit mapping and rejects ambiguous 2-digit province adcode', () => {
     const features = normalizeCityGeoFeatures([
       { properties: { province: '广东省', city: '深圳市', adcode: '广东-深圳' } },
       { properties: { province: '海南省', city: '临高县', adcode: '469024' } },
@@ -55,9 +55,12 @@ describe('mapCity helpers', () => {
     expect(resolve({ province: '海南省', city: '临高县', adcode: '469024' })).toBe('469024')
     expect(resolve({ province: '北京市', city: '北京市', adcode: '110100' })).toBe('110100')
 
-    // 2位/4位重庆 adcode 都应稳定映射到地图 key 空间，而不是回退到不匹配的 name-key
-    expect(resolve({ province: '重庆市', city: '重庆市', adcode: '50' })).toBe('500100')
+    // 2位省级 adcode 不能强制落到城市 key
+    expect(resolve({ province: '广东省', city: '深圳市', adcode: '44' })).toBe('')
+
+    // 4位/6位 adcode 仍应稳定映射
     expect(resolve({ province: '重庆市', city: '重庆市', adcode: '5001' })).toBe('500100')
     expect(resolve({ province: '重庆市', city: '重庆市', adcode: '5002' })).toBe('500200')
+    expect(resolve({ province: '重庆市', city: '重庆城区', adcode: '500100' })).toBe('500100')
   })
 })

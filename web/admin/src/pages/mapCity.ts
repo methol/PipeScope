@@ -96,7 +96,6 @@ export function createCityJoinKeyResolver(features: any[]) {
   const keySet = new Set<string>()
   const adcodeToKey = new Map<string, string>()
   const adcode4ToKey = new Map<string, string>()
-  const adcode2ToKey = new Map<string, string>()
   const nameKeyToKey = new Map<string, string>()
 
   for (const feature of Array.isArray(features) ? features : []) {
@@ -106,24 +105,26 @@ export function createCityJoinKeyResolver(features: any[]) {
 
     keySet.add(key)
 
-    const { adcode6, adcode4, adcode2 } = adcodePrefixes(p.adcode)
+    const { adcode6, adcode4 } = adcodePrefixes(p.adcode)
     if (adcode6 && !adcodeToKey.has(adcode6)) adcodeToKey.set(adcode6, key)
     if (adcode4 && !adcode4ToKey.has(adcode4)) adcode4ToKey.set(adcode4, key)
-    if (adcode2 && !adcode2ToKey.has(adcode2)) adcode2ToKey.set(adcode2, key)
 
     const fallbackNameKey = cityNameKey({ province: p.province, city: p.city })
     if (fallbackNameKey && !nameKeyToKey.has(fallbackNameKey)) nameKeyToKey.set(fallbackNameKey, key)
   }
 
   return (item: CityLike) => {
-    const { adcode6, adcode4, adcode2 } = adcodePrefixes(item.adcode)
+    const rawAdcode = String(item.adcode || '').trim()
+    const { adcode6, adcode4 } = adcodePrefixes(rawAdcode)
     const fallbackNameKey = cityNameKey(item)
 
     if (adcode6 && keySet.has(adcode6)) return adcode6
     if (adcode6 && adcodeToKey.has(adcode6)) return adcodeToKey.get(adcode6) as string
 
     if (adcode4 && adcode4ToKey.has(adcode4)) return adcode4ToKey.get(adcode4) as string
-    if (adcode2 && adcode2ToKey.has(adcode2)) return adcode2ToKey.get(adcode2) as string
+
+    // 2位省级 adcode 粗粒度过高，禁止强制映射到任意城市，避免污染城市热力
+    if (/^\d{2}$/.test(rawAdcode)) return ''
 
     if (fallbackNameKey && keySet.has(fallbackNameKey)) return fallbackNameKey
     if (fallbackNameKey && nameKeyToKey.has(fallbackNameKey)) return nameKeyToKey.get(fallbackNameKey) as string
