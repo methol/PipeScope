@@ -25,6 +25,9 @@ sync-web:
 	rm -rf $(EMBED_STATIC)
 	mkdir -p $(EMBED_STATIC)
 	cp -R $(WEB_DIR)/dist/* $(EMBED_STATIC)/
+	./scripts/generate-geojson-sidecars.sh $(WEB_DIR)/public/maps/china-cities.geojson
+	./scripts/generate-geojson-sidecars.sh $(WEB_DIST)/maps/china-cities.geojson
+	./scripts/generate-geojson-sidecars.sh $(EMBED_STATIC)/maps/china-cities.geojson
 
 fetch-geo-data:
 	./scripts/fetch-geo-data.sh
