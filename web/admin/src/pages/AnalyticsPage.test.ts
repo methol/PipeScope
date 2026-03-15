@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import AnalyticsPage from './AnalyticsPage.vue'
 
 async function flushPage() {
@@ -8,64 +8,36 @@ async function flushPage() {
 }
 
 describe('AnalyticsPage', () => {
-  beforeEach(() => {
-    vi.useFakeTimers()
-  })
-
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
-  it('does not auto-refresh and paginates when searching', async () => {
+  it('does not auto-refresh and requests backend aggregation once when searching', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: string | URL | Request) => {
         const url = String(input)
-        if (!url.includes('/api/sessions?')) throw new Error('unexpected')
-        const isFirstPage = url.includes('offset=0')
-        const isSecondPage = url.includes('offset=500')
+        if (!url.includes('/api/analytics?')) throw new Error('unexpected')
         return {
           ok: true,
           status: 200,
           json: async () => ({
-            items: isFirstPage
-              ? Array.from({ length: 500 }, (_, i) => ({
-                  id: i + 1,
-                  rule_id: 'r1',
-                  src_addr: 'a',
-                  dst_addr: 'b',
-                  status: 'ok',
-                  up_bytes: 1,
-                  down_bytes: 2,
-                  total_bytes: 3,
-                  start_ts: Date.now(),
-                  end_ts: Date.now(),
-                  duration_ms: 10,
-                  province: '广东',
-                  city: '深圳',
-                  adcode: '440300',
-                }))
-              : isSecondPage
-              ? [
-                  {
-                    id: 2,
-                    rule_id: 'r2',
-                    src_addr: 'c',
-                    dst_addr: 'd',
-                    status: 'ok',
-                    up_bytes: 1,
-                    down_bytes: 2,
-                    total_bytes: 3,
-                    start_ts: Date.now(),
-                    end_ts: Date.now(),
-                    duration_ms: 11,
-                    province: '广东',
-                    city: '珠海',
-                    adcode: '440400',
-                  },
-                ]
-              : [],
+            overview: {
+              conn_count: 501,
+              total_bytes: 1503,
+              avg_duration_ms: 12,
+              active_rules: 2,
+              active_cities: 2,
+            },
+            top_cities: [
+              { name: '广东深圳', conn_count: 500, total_bytes: 1500 },
+              { name: '广东珠海', conn_count: 1, total_bytes: 3 },
+            ],
+            top_rules: [
+              { name: 'r1', conn_count: 500, total_bytes: 1500 },
+              { name: 'r2', conn_count: 1, total_bytes: 3 },
+            ],
           }),
         }
       }),
@@ -75,51 +47,37 @@ describe('AnalyticsPage', () => {
     expect((fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0)
 
     await wrapper.find('button.btn').trigger('click')
-    await Promise.resolve()
-    await Promise.resolve()
+    await flushPage()
 
     const calls = (fetch as ReturnType<typeof vi.fn>).mock.calls.map((x) => String(x[0]))
-    expect(calls.some((x) => x.includes('offset=0'))).toBe(true)
-    expect(calls.some((x) => x.includes('offset=500'))).toBe(true)
-
-    await vi.advanceTimersByTimeAsync(30000)
-    await Promise.resolve()
-    expect((fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2)
+    expect(calls.length).toBe(1)
+    expect(calls[0]).toContain('/api/analytics?')
+    expect(wrapper.text()).toContain('连接数：501')
+    expect(wrapper.text()).toContain('活跃规则：2')
+    expect(wrapper.text()).toContain('广东深圳 - 1.46 KB')
   })
 
   it('clears previous results when a new search fails', async () => {
-    vi.useRealTimers()
     let fail = false
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: string | URL | Request) => {
         if (fail) throw new Error('network down')
         const url = String(input)
-        const isFirstPage = url.includes('offset=0')
+        if (!url.includes('/api/analytics?')) throw new Error('unexpected')
         return {
           ok: true,
           status: 200,
           json: async () => ({
-            items: isFirstPage
-              ? [
-                  {
-                    id: 1,
-                    rule_id: 'r1',
-                    src_addr: 'a',
-                    dst_addr: 'b',
-                    status: 'ok',
-                    up_bytes: 1,
-                    down_bytes: 2,
-                    total_bytes: 3,
-                    start_ts: Date.now(),
-                    end_ts: Date.now(),
-                    duration_ms: 10,
-                    province: '广东',
-                    city: '深圳',
-                    adcode: '440300',
-                  },
-                ]
-              : [],
+            overview: {
+              conn_count: 1,
+              total_bytes: 3,
+              avg_duration_ms: 10,
+              active_rules: 1,
+              active_cities: 1,
+            },
+            top_cities: [{ name: '广东深圳', conn_count: 1, total_bytes: 3 }],
+            top_rules: [{ name: 'r1', conn_count: 1, total_bytes: 3 }],
           }),
         }
       }),
