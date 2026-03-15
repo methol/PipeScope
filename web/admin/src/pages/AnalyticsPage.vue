@@ -1,6 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { fetchAnalytics, type AnalyticsBucket, type AnalyticsResult } from '../api/client'
+import { computed, ref, watch } from 'vue'
+import {
+  fetchAnalytics,
+  fetchAnalyticsOptions,
+  type AnalyticsBucket,
+  type AnalyticsCityOption,
+  type AnalyticsOptions,
+  type AnalyticsResult,
+} from '../api/client'
 import { formatBytes } from '../utils/format'
 
 const windowText = ref('1d')
@@ -9,6 +16,7 @@ const province = ref('')
 const city = ref('')
 const status = ref('')
 const loading = ref(false)
+const optionsLoading = ref(false)
 const error = ref('')
 
 const analytics = ref<AnalyticsResult>({
@@ -23,9 +31,47 @@ const analytics = ref<AnalyticsResult>({
   top_rules: [],
 })
 
+const options = ref<AnalyticsOptions>({
+  rules: [],
+  provinces: [],
+  cities: [],
+  statuses: [],
+})
+
+const filteredCities = computed<AnalyticsCityOption[]>(() => {
+  if (!province.value) return options.value.cities
+  return options.value.cities.filter((item) => item.province === province.value)
+})
+
 function formatBucket(item: AnalyticsBucket): string {
   return `${item.name} - ${formatBytes(item.total_bytes)}`
 }
+
+async function loadOptions() {
+  optionsLoading.value = true
+  try {
+    options.value = await fetchAnalyticsOptions({
+      window: windowText.value,
+      rule_id: ruleID.value,
+      province: province.value,
+      city: city.value,
+      status: status.value,
+    })
+  } finally {
+    optionsLoading.value = false
+  }
+}
+
+watch(province, () => {
+  const available = new Set(filteredCities.value.map((item) => item.city))
+  if (city.value && !available.has(city.value)) {
+    city.value = ''
+  }
+})
+
+watch(windowText, async () => {
+  await loadOptions()
+})
 
 async function search() {
   try {
@@ -56,6 +102,8 @@ async function search() {
     loading.value = false
   }
 }
+
+void loadOptions()
 </script>
 
 <template>
@@ -75,25 +123,40 @@ async function search() {
         </label>
         <label>
           Rule
-          <input v-model="ruleID" placeholder="可选" />
+          <select v-model="ruleID">
+            <option value="">全部</option>
+            <option v-for="item in options.rules" :key="item" :value="item">{{ item }}</option>
+          </select>
         </label>
         <label>
           省
-          <input v-model="province" placeholder="可选" />
+          <select v-model="province">
+            <option value="">全部</option>
+            <option v-for="item in options.provinces" :key="item" :value="item">{{ item }}</option>
+          </select>
         </label>
         <label>
           市
-          <input v-model="city" placeholder="可选" />
+          <select v-model="city">
+            <option value="">全部</option>
+            <option v-for="item in filteredCities" :key="`${item.province}-${item.city}`" :value="item.city">
+              {{ item.city }}
+            </option>
+          </select>
         </label>
         <label>
           状态
-          <input v-model="status" placeholder="可选" />
+          <select v-model="status">
+            <option value="">全部</option>
+            <option v-for="item in options.statuses" :key="item" :value="item">{{ item }}</option>
+          </select>
         </label>
         <button class="btn" @click="search">检索</button>
       </div>
     </div>
 
     <p class="meta">分析型页面：不自动刷新（手动检索）</p>
+    <p v-if="optionsLoading" class="meta">筛选项加载中...</p>
     <p v-if="loading" class="meta">加载中...</p>
     <p v-if="error" class="error">{{ error }}</p>
 

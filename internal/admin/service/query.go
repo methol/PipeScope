@@ -32,6 +32,14 @@ type AnalyticsQuery struct {
 	TopN     int
 }
 
+type AnalyticsOptionsQuery struct {
+	Window   time.Duration
+	RuleID   string
+	Province string
+	City     string
+	Status   string
+}
+
 type ProvinceQuery struct {
 	Window   time.Duration
 	Metric   string
@@ -98,4 +106,16 @@ type AnalyticsResult struct {
 	Overview  AnalyticsOverview `json:"overview"`
 	TopCities []AnalyticsBucket `json:"top_cities"`
 	TopRules  []AnalyticsBucket `json:"top_rules"`
+}
+
+type AnalyticsOptions struct {
+	Rules     []string           `json:"rules"`
+	Provinces []string           `json:"provinces"`
+	Cities    []AnalyticsCityRef `json:"cities"`
+	Statuses  []string           `json:"statuses"`
+}
+
+type AnalyticsCityRef struct {
+	Province string `json:"province"`
+	City     string `json:"city"`
 }
