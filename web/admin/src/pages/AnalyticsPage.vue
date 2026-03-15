@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { fetchSessions, type SessionItem } from '../api/client'
+import { ref } from 'vue'
+import { fetchAnalytics, type AnalyticsBucket, type AnalyticsResult } from '../api/client'
 import { formatBytes } from '../utils/format'
 
 const windowText = ref('1d')
@@ -10,79 +10,47 @@ const city = ref('')
 const status = ref('')
 const loading = ref(false)
 const error = ref('')
-const items = ref<SessionItem[]>([])
 
-const filtered = computed(() => {
-  return items.value.filter((it) => {
-    if (province.value && !String(it.province || '').includes(province.value)) return false
-    if (city.value && !String(it.city || '').includes(city.value)) return false
-    if (status.value && String(it.status || '') !== status.value) return false
-    return true
-  })
+const analytics = ref<AnalyticsResult>({
+  overview: {
+    conn_count: 0,
+    total_bytes: 0,
+    avg_duration_ms: 0,
+    active_rules: 0,
+    active_cities: 0,
+  },
+  top_cities: [],
+  top_rules: [],
 })
 
-const summary = computed(() => {
-  let totalBytes = 0
-  let totalDuration = 0
-  const rules = new Set<string>()
-  const cities = new Set<string>()
-  for (const it of filtered.value) {
-    totalBytes += Number(it.total_bytes) || 0
-    totalDuration += Number(it.duration_ms) || 0
-    if (it.rule_id) rules.add(it.rule_id)
-    if (it.city) cities.add(`${it.province}-${it.city}`)
-  }
-  const conn = filtered.value.length
-  return {
-    conn,
-    totalBytes,
-    avgDuration: conn > 0 ? Math.round(totalDuration / conn) : 0,
-    rules: rules.size,
-    cities: cities.size,
-  }
-})
-
-const topCities = computed(() => {
-  const m = new Map<string, number>()
-  for (const it of filtered.value) {
-    const k = `${it.province}${it.city}`
-    m.set(k, (m.get(k) || 0) + (Number(it.total_bytes) || 0))
-  }
-  return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10)
-})
-
-const topRules = computed(() => {
-  const m = new Map<string, number>()
-  for (const it of filtered.value) {
-    const k = it.rule_id || 'unknown'
-    m.set(k, (m.get(k) || 0) + (Number(it.total_bytes) || 0))
-  }
-  return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10)
-})
+function formatBucket(item: AnalyticsBucket): string {
+  return `${item.name} - ${formatBytes(item.total_bytes)}`
+}
 
 async function search() {
   try {
     loading.value = true
     error.value = ''
-    const all: SessionItem[] = []
-    const pageSize = 500
-    const maxPages = 200
-    for (let pageNo = 0; pageNo < maxPages; pageNo++) {
-      const page = await fetchSessions({
-        window: windowText.value,
-        rule_id: ruleID.value,
-        limit: String(pageSize),
-        offset: String(pageNo * pageSize),
-      })
-      all.push(...page)
-      if (page.length < pageSize) break
-      if (pageNo === maxPages - 1) {
-        error.value = `数据量过大，已截断前 ${maxPages * pageSize} 条，请缩小检索范围`
-      }
-    }
-    items.value = all
+    analytics.value = await fetchAnalytics({
+      window: windowText.value,
+      rule_id: ruleID.value,
+      province: province.value,
+      city: city.value,
+      status: status.value,
+      top_n: '10',
+    })
   } catch (e) {
-    items.value = []
+    analytics.value = {
+      overview: {
+        conn_count: 0,
+        total_bytes: 0,
+        avg_duration_ms: 0,
+        active_rules: 0,
+        active_cities: 0,
+      },
+      top_cities: [],
+      top_rules: [],
+    }
     error.value = e instanceof Error ? e.message : 'unknown error'
   } finally {
     loading.value = false
@@ -132,24 +100,24 @@ async function search() {
     <div class="analytics-grid">
       <article class="analytics-card">
         <h3>总览</h3>
-        <p>连接数：{{ summary.conn }}</p>
-        <p>总字节：{{ formatBytes(summary.totalBytes) }}</p>
-        <p>平均时长：{{ summary.avgDuration }} ms</p>
-        <p>活跃规则：{{ summary.rules }}</p>
-        <p>活跃城市：{{ summary.cities }}</p>
+        <p>连接数：{{ analytics.overview.conn_count }}</p>
+        <p>总字节：{{ formatBytes(analytics.overview.total_bytes) }}</p>
+        <p>平均时长：{{ analytics.overview.avg_duration_ms }} ms</p>
+        <p>活跃规则：{{ analytics.overview.active_rules }}</p>
+        <p>活跃城市：{{ analytics.overview.active_cities }}</p>
       </article>
 
       <article class="analytics-card">
         <h3>Top 城市（按字节）</h3>
         <ol>
-          <li v-for="item in topCities" :key="item[0]">{{ item[0] }} - {{ formatBytes(item[1]) }}</li>
+          <li v-for="item in analytics.top_cities" :key="item.name">{{ formatBucket(item) }}</li>
         </ol>
       </article>
 
       <article class="analytics-card">
         <h3>Top 规则（按字节）</h3>
         <ol>
-          <li v-for="item in topRules" :key="item[0]">{{ item[0] }} - {{ formatBytes(item[1]) }}</li>
+          <li v-for="item in analytics.top_rules" :key="item.name">{{ formatBucket(item) }}</li>
         </ol>
       </article>
     </div>

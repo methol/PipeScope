@@ -35,6 +35,26 @@ export interface Overview {
   total_bytes: number
 }
 
+export interface AnalyticsOverview {
+  conn_count: number
+  total_bytes: number
+  avg_duration_ms: number
+  active_rules: number
+  active_cities: number
+}
+
+export interface AnalyticsBucket {
+  name: string
+  conn_count: number
+  total_bytes: number
+}
+
+export interface AnalyticsResult {
+  overview: AnalyticsOverview
+  top_cities: AnalyticsBucket[]
+  top_rules: AnalyticsBucket[]
+}
+
 async function fetchJSON<T>(url: string): Promise<T> {
   const rsp = await fetch(url)
   if (!rsp.ok) {
@@ -94,4 +114,22 @@ export async function fetchSessions(params: {
 export async function fetchOverview(params: { window: string }): Promise<Overview> {
   const q = new URLSearchParams(params)
   return fetchJSON<Overview>(`/api/overview?${q.toString()}`)
+}
+
+export async function fetchAnalytics(params: {
+  window: string
+  rule_id?: string
+  province?: string
+  city?: string
+  status?: string
+  top_n?: string
+}): Promise<AnalyticsResult> {
+  const q = new URLSearchParams()
+  q.set('window', params.window)
+  if (params.rule_id) q.set('rule_id', params.rule_id)
+  if (params.province) q.set('province', params.province)
+  if (params.city) q.set('city', params.city)
+  if (params.status) q.set('status', params.status)
+  if (params.top_n) q.set('top_n', params.top_n)
+  return fetchJSON<AnalyticsResult>(`/api/analytics?${q.toString()}`)
 }

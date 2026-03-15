@@ -190,6 +190,110 @@ ORDER BY v DESC
 	return out, rows.Err()
 }
 
+func (s *Service) Analytics(ctx context.Context, q AnalyticsQuery) (AnalyticsResult, error) {
+	result := AnalyticsResult{}
+	windowStart := s.windowStartMS(q.Window)
+	ruleID := q.RuleID
+	province := q.Province
+	city := q.City
+	status := q.Status
+	topN := q.TopN
+	if topN <= 0 {
+		topN = 10
+	}
+
+	err := s.db.QueryRowContext(ctx, `
+SELECT
+	COUNT(*) AS conn_count,
+	COALESCE(SUM(total_bytes), 0) AS total_bytes,
+	COALESCE(AVG(duration_ms), 0) AS avg_duration_ms,
+	COUNT(DISTINCT CASE WHEN rule_id != '' THEN rule_id END) AS active_rules,
+	COUNT(DISTINCT CASE WHEN city != '' THEN COALESCE(NULLIF(province, ''), '未知') || '-' || city END) AS active_cities
+FROM conn_events
+WHERE start_ts >= ?
+  AND (? = '' OR rule_id = ?)
+  AND (? = '' OR province LIKE '%' || ? || '%')
+  AND (? = '' OR city LIKE '%' || ? || '%')
+  AND (? = '' OR status = ?)
+`, windowStart, ruleID, ruleID, province, province, city, city, status, status).Scan(
+		&result.Overview.ConnCount,
+		&result.Overview.TotalBytes,
+		&result.Overview.AvgDurationMS,
+		&result.Overview.ActiveRules,
+		&result.Overview.ActiveCities,
+	)
+	if err != nil {
+		return result, err
+	}
+
+	cityRows, err := s.db.QueryContext(ctx, `
+SELECT
+	CASE
+		WHEN COALESCE(NULLIF(province, ''), '') = '' AND COALESCE(NULLIF(city, ''), '') = '' THEN '未知城市'
+		ELSE COALESCE(NULLIF(province, ''), '未知') || COALESCE(NULLIF(city, ''), '')
+	END AS name,
+	COUNT(*) AS conn_count,
+	COALESCE(SUM(total_bytes), 0) AS total_bytes
+FROM conn_events
+WHERE start_ts >= ?
+  AND (? = '' OR rule_id = ?)
+  AND (? = '' OR province LIKE '%' || ? || '%')
+  AND (? = '' OR city LIKE '%' || ? || '%')
+  AND (? = '' OR status = ?)
+GROUP BY COALESCE(NULLIF(province, ''), '未知'), COALESCE(NULLIF(city, ''), '')
+ORDER BY total_bytes DESC, conn_count DESC
+LIMIT ?
+`, windowStart, ruleID, ruleID, province, province, city, city, status, status, topN)
+	if err != nil {
+		return result, err
+	}
+	defer cityRows.Close()
+
+	for cityRows.Next() {
+		var item AnalyticsBucket
+		if err := cityRows.Scan(&item.Name, &item.ConnCount, &item.TotalBytes); err != nil {
+			return result, err
+		}
+		result.TopCities = append(result.TopCities, item)
+	}
+	if err := cityRows.Err(); err != nil {
+		return result, err
+	}
+
+	ruleRows, err := s.db.QueryContext(ctx, `
+SELECT
+	COALESCE(NULLIF(rule_id, ''), 'unknown') AS name,
+	COUNT(*) AS conn_count,
+	COALESCE(SUM(total_bytes), 0) AS total_bytes
+FROM conn_events
+WHERE start_ts >= ?
+  AND (? = '' OR rule_id = ?)
+  AND (? = '' OR province LIKE '%' || ? || '%')
+  AND (? = '' OR city LIKE '%' || ? || '%')
+  AND (? = '' OR status = ?)
+GROUP BY COALESCE(NULLIF(rule_id, ''), 'unknown')
+ORDER BY total_bytes DESC, conn_count DESC
+LIMIT ?
+`, windowStart, ruleID, ruleID, province, province, city, city, status, status, topN)
+	if err != nil {
+		return result, err
+	}
+	defer ruleRows.Close()
+
+	for ruleRows.Next() {
+		var item AnalyticsBucket
+		if err := ruleRows.Scan(&item.Name, &item.ConnCount, &item.TotalBytes); err != nil {
+			return result, err
+		}
+		result.TopRules = append(result.TopRules, item)
+	}
+	if err := ruleRows.Err(); err != nil {
+		return result, err
+	}
+
+	return result, nil
+}
+
 func (s *Service) windowStartMS(window time.Duration) int64 {
 	if window <= 0 {
 		return 0

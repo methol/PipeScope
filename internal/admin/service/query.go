@@ -23,6 +23,15 @@ type SessionsQuery struct {
 	Offset int
 }
 
+type AnalyticsQuery struct {
+	Window   time.Duration
+	RuleID   string
+	Province string
+	City     string
+	Status   string
+	TopN     int
+}
+
 type ProvinceQuery struct {
 	Window   time.Duration
 	Metric   string
@@ -69,4 +78,24 @@ type SessionItem struct {
 type Overview struct {
 	ConnCount  int64 `json:"conn_count"`
 	TotalBytes int64 `json:"total_bytes"`
+}
+
+type AnalyticsOverview struct {
+	ConnCount     int64 `json:"conn_count"`
+	TotalBytes    int64 `json:"total_bytes"`
+	AvgDurationMS int64 `json:"avg_duration_ms"`
+	ActiveRules   int64 `json:"active_rules"`
+	ActiveCities  int64 `json:"active_cities"`
+}
+
+type AnalyticsBucket struct {
+	Name       string `json:"name"`
+	ConnCount  int64  `json:"conn_count"`
+	TotalBytes int64  `json:"total_bytes"`
+}
+
+type AnalyticsResult struct {
+	Overview  AnalyticsOverview `json:"overview"`
+	TopCities []AnalyticsBucket `json:"top_cities"`
+	TopRules  []AnalyticsBucket `json:"top_rules"`
 }
