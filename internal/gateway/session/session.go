@@ -3,31 +3,43 @@ package session
 import "time"
 
 type Event struct {
-	RuleID     string
-	ListenPort int
-	SrcAddr    string
-	DstAddr    string
-	StartTS    int64
-	EndTS      int64
-	DurationMS int64
-	UpBytes    int64
-	DownBytes  int64
-	TotalBytes int64
-	Status     string
-	Error      string
+	RuleID        string
+	ListenPort    int
+	SrcAddr       string
+	DstAddr       string
+	StartTS       int64
+	EndTS         int64
+	DurationMS    int64
+	UpBytes       int64
+	DownBytes     int64
+	TotalBytes    int64
+	Status        string
+	Error         string
+	BlockedReason string // geo_denied, geo_not_in_allowlist, etc.
+	// Geo fields for blocked connections
+	Country  string
+	Province string
+	City     string
+	Adcode   string
 }
 
 type ConnSession struct {
-	RuleID     string
-	ListenPort int
-	SrcAddr    string
-	DstAddr    string
-	StartTS    int64
-	EndTS      int64
-	UpBytes    int64
-	DownBytes  int64
-	Status     string
-	Error      string
+	RuleID        string
+	ListenPort    int
+	SrcAddr       string
+	DstAddr       string
+	StartTS       int64
+	EndTS         int64
+	UpBytes       int64
+	DownBytes     int64
+	Status        string
+	Error         string
+	BlockedReason string
+	// Geo fields for blocked connections
+	Country  string
+	Province string
+	City     string
+	Adcode   string
 }
 
 func New(ruleID string, listenPort int, srcAddr, dstAddr string) *ConnSession {
@@ -70,6 +82,23 @@ func (s *ConnSession) MarkIOErr(err error) {
 	}
 }
 
+// GeoInfo contains geographic information for a connection
+type GeoInfo struct {
+	Country  string
+	Province string
+	City     string
+	Adcode   string
+}
+
+func (s *ConnSession) MarkBlockedGeo(reason string, geo GeoInfo) {
+	s.Status = "blocked"
+	s.BlockedReason = reason
+	s.Country = geo.Country
+	s.Province = geo.Province
+	s.City = geo.City
+	s.Adcode = geo.Adcode
+}
+
 func (s *ConnSession) Finalize() Event {
 	endTS := s.EndTS
 	if endTS == 0 {
@@ -81,18 +110,22 @@ func (s *ConnSession) Finalize() Event {
 	}
 	total := s.UpBytes + s.DownBytes
 	return Event{
-		RuleID:     s.RuleID,
-		ListenPort: s.ListenPort,
-		SrcAddr:    s.SrcAddr,
-		DstAddr:    s.DstAddr,
-		StartTS:    s.StartTS,
-		EndTS:      endTS,
-		DurationMS: dur,
-		UpBytes:    s.UpBytes,
-		DownBytes:  s.DownBytes,
-		TotalBytes: total,
-		Status:     s.Status,
-		Error:      s.Error,
+		RuleID:        s.RuleID,
+		ListenPort:    s.ListenPort,
+		SrcAddr:       s.SrcAddr,
+		DstAddr:       s.DstAddr,
+		StartTS:       s.StartTS,
+		EndTS:         endTS,
+		DurationMS:    dur,
+		UpBytes:       s.UpBytes,
+		DownBytes:     s.DownBytes,
+		TotalBytes:    total,
+		Status:        s.Status,
+		Error:         s.Error,
+		BlockedReason: s.BlockedReason,
+		Country:       s.Country,
+		Province:      s.Province,
+		City:          s.City,
+		Adcode:        s.Adcode,
 	}
 }
-

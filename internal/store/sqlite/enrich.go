@@ -24,6 +24,15 @@ type enrichedFields struct {
 }
 
 func enrichGeoFields(evt session.Event, region RegionLookup, matcher AdcodeMatcher) enrichedFields {
+	// If event already has geo info (e.g., from blocked connection), use it directly
+	if evt.Province != "" || evt.City != "" || evt.Adcode != "" {
+		return enrichedFields{
+			Province: evt.Province,
+			City:     evt.City,
+			Adcode:   evt.Adcode,
+		}
+	}
+
 	if region == nil || matcher == nil {
 		return enrichedFields{}
 	}

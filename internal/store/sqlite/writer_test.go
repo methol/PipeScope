@@ -301,3 +301,78 @@ func TestWriterEnrichesGeoFieldsWithRealMatcherOnSingleConnection(t *testing.T) 
 		t.Fatalf("writer did not stop with real matcher on single connection")
 	}
 }
+
+func TestWriterUsesEventGeoFieldsForBlockedConnection(t *testing.T) {
+	db := openTempDB(t)
+	s := New(db)
+	if err := s.InitSchema(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	in := make(chan session.Event, 1)
+	w := NewWriter(db, in, 1, time.Hour)
+	// Set a geo enricher that would return different values
+	w.SetGeoEnricher(
+		fakeRegionLookup{region: ip2region.Region{Province: "浙江", City: "杭州"}},
+		areacity.NewMatcher(db),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- w.Run(ctx)
+	}()
+
+	// Event has geo info from blocked connection (should take priority)
+	in <- session.Event{
+		RuleID:        "r-blocked",
+		ListenPort:    10001,
+		SrcAddr:       "1.1.1.1:1000",
+		DstAddr:       "2.2.2.2:80",
+		StartTS:       time.Now().UnixMilli(),
+		EndTS:         time.Now().UnixMilli(),
+		Status:        "blocked",
+		BlockedReason: "geo_denied",
+		Province:      "北京",
+		City:          "北京",
+		Adcode:        "110000",
+	}
+	close(in)
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("writer run: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("writer did not stop")
+	}
+
+	var status, blockedReason, province, city, adcode string
+	if err := db.QueryRow(`
+SELECT status, blocked_reason, province, city, adcode
+FROM conn_events
+WHERE rule_id = 'r-blocked'
+LIMIT 1
+`).Scan(&status, &blockedReason, &province, &city, &adcode); err != nil {
+		t.Fatalf("query row: %v", err)
+	}
+	if status != "blocked" {
+		t.Fatalf("expected status=blocked, got %s", status)
+	}
+	if blockedReason != "geo_denied" {
+		t.Fatalf("expected blocked_reason=geo_denied, got %s", blockedReason)
+	}
+	// Geo fields should come from event, not from enricher
+	if province != "北京" {
+		t.Fatalf("expected province=北京, got %s", province)
+	}
+	if city != "北京" {
+		t.Fatalf("expected city=北京, got %s", city)
+	}
+	if adcode != "110000" {
+		t.Fatalf("expected adcode=110000, got %s", adcode)
+	}
+}

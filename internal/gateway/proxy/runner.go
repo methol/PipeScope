@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"pipescope/internal/gateway/geo"
 	"pipescope/internal/gateway/rule"
 	"pipescope/internal/gateway/session"
 )
@@ -22,6 +23,8 @@ type Runner struct {
 	dial        dialFunc
 	dialTimeout time.Duration
 	idleTimeout time.Duration
+
+	geoLookup geo.GeoLookupFunc
 
 	queuePolicy string
 	sampleRate  float64
@@ -70,6 +73,10 @@ func (r *Runner) SetQueuePolicy(policy string, sampleRate float64) {
 	if sampleRate > 0 && sampleRate <= 1 {
 		r.sampleRate = sampleRate
 	}
+}
+
+func (r *Runner) SetGeoLookup(fn geo.GeoLookupFunc) {
+	r.geoLookup = fn
 }
 
 func (r *Runner) Start(ctx context.Context) error {
@@ -174,6 +181,28 @@ func (r *Runner) proxyConn(ctx context.Context, client net.Conn, rl rule.Rule) {
 		client.RemoteAddr().String(),
 		rl.Forward,
 	)
+
+	// Geo policy check before forwarding
+	if rl.GeoPolicy != nil && r.geoLookup != nil {
+		srcIP := extractHostFromAddr(client.RemoteAddr().String())
+		if srcIP != "" {
+			geoInfo, err := r.geoLookup(srcIP)
+			if err == nil {
+				matcher := geo.NewMatcher(rl.GeoPolicy)
+				result := matcher.Check(geoInfo)
+				if !result.Allowed {
+					sess.MarkBlockedGeo(result.BlockedReason, session.GeoInfo{
+						Country:  geoInfo.Country,
+						Province: geoInfo.Province,
+						City:     geoInfo.City,
+						Adcode:   geoInfo.Adcode,
+					})
+					r.emit(sess.Finalize())
+					return
+				}
+			}
+		}
+	}
 
 	dialCtx := ctx
 	cancel := func() {}
@@ -283,4 +312,12 @@ func listenPort(addr net.Addr) int {
 		return 0
 	}
 	return port
+}
+
+func extractHostFromAddr(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	return host
 }
