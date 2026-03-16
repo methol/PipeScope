@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS conn_events (
     status TEXT NOT NULL DEFAULT 'ok',
     err_msg TEXT NOT NULL DEFAULT '',
     blocked_reason TEXT NOT NULL DEFAULT '',
+    country TEXT NOT NULL DEFAULT '',
     province TEXT NOT NULL DEFAULT '',
     city TEXT NOT NULL DEFAULT '',
     adcode TEXT NOT NULL DEFAULT '',

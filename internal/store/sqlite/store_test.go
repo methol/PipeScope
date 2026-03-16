@@ -43,6 +43,7 @@ CREATE TABLE conn_events (
 	}
 
 	requireColumn(t, db, "conn_events", "blocked_reason")
+	requireColumn(t, db, "conn_events", "country")
 	requireColumn(t, db, "conn_events", "province")
 	requireColumn(t, db, "conn_events", "city")
 	requireColumn(t, db, "conn_events", "adcode")

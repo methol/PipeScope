@@ -85,6 +85,7 @@ type SessionItem struct {
 	StartTS       int64  `json:"start_ts"`
 	EndTS         int64  `json:"end_ts"`
 	DurationMS    int64  `json:"duration_ms"`
+	Country       string `json:"country"`
 	Province      string `json:"province"`
 	City          string `json:"city"`
 	Adcode        string `json:"adcode"`
