@@ -362,3 +362,74 @@ allow 模式 + require_allow_hit + 未命中? ──→ blocked_reason='geo_not_
 1. 支持 geo 数据库热更新
 2. 支持按 rule 配置不同的 geo policy
 3. 管理 UI 配置 geo policy
+
+---
+
+## 9. 实现状态（2026-03-16）
+
+### 已完成功能
+
+#### 9.1 Geo 前置拦截
+- ✅ 配置结构与验证（`internal/config/config.go`, `internal/config/validate.go`）
+- ✅ Geo 策略匹配器（`internal/gateway/geo/policy.go`）
+- ✅ Runner 集成拦截逻辑（`internal/gateway/proxy/runner.go`）
+- ✅ blocked_reason 字段入库（`internal/store/sqlite/schema.sql`, `writer.go`）
+- ✅ 完整单元测试覆盖（`policy_test.go`, `validate_test.go`）
+
+#### 9.2 前端 UI 改进
+- ✅ MapPage: rule/status 筛选 + limit 选择器（10/50/100/1000）+ 人类友好字节格式
+- ✅ AnalyticsPage: top_n 选择器（10/50/100/1000）
+- ✅ SessionsPage: rule 下拉筛选 + blocked_reason 列展示
+
+#### 9.3 后端 API 增强
+- ✅ `/api/map/china` 支持 `rule_id`, `status`, `limit` 参数
+- ✅ `/api/analytics` 支持 `top_n` 参数，上限提升至 1000
+- ✅ `/api/sessions/options` 新增，返回可用 rule_id 列表
+- ✅ `/api/analytics/options` 返回 statuses 列表（包含 blocked 状态）
+
+### 验证命令
+
+```bash
+# 后端测试
+go test ./...
+
+# 前端构建
+cd web/admin && npm run build
+
+# Geo Policy 测试用例
+go test ./internal/gateway/geo/... -v
+
+# 配置验证测试
+go test ./internal/config/... -v
+```
+
+### 变更文件清单
+
+**后端：**
+- `cmd/pipescope/main.go` - Geo lookup 初始化与传递
+- `internal/config/config.go` - GeoPolicy 配置结构
+- `internal/config/validate.go` - 配置校验逻辑
+- `internal/config/validate_test.go` - 校验测试
+- `internal/gateway/geo/lookup.go` - Geo 查询接口
+- `internal/gateway/geo/policy.go` - 策略匹配器
+- `internal/gateway/geo/policy_test.go` - 匹配测试
+- `internal/gateway/proxy/runner.go` - 拦截集成
+- `internal/gateway/rule/rule.go` - Rule 扩展
+- `internal/gateway/session/session.go` - blocked_reason 字段
+- `internal/store/sqlite/schema.sql` - blocked_reason 列
+- `internal/store/sqlite/writer.go` - 写入 blocked_reason
+- `internal/admin/http/handlers.go` - 新参数处理
+- `internal/admin/http/server.go` - 路由注册
+- `internal/admin/service/query.go` - 查询参数定义
+- `internal/admin/service/service.go` - 查询实现
+
+**前端：**
+- `web/admin/src/api/client.ts` - API 参数扩展
+- `web/admin/src/pages/MapPage.vue` - 筛选 + 人类友好格式
+- `web/admin/src/pages/AnalyticsPage.vue` - top_n 选择器
+- `web/admin/src/pages/SessionsPage.vue` - rule 下拉 + blocked_reason
+- `web/admin/src/utils/format.ts` - formatBytes 工具函数
+
+**文档：**
+- `README.md` - 添加 Geo Policy 使用说明
+- `docs/plans/2026-03-16-geo-policy-and-ui-design.md` - 实现状态

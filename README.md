@@ -167,6 +167,73 @@ writer:
 
 适合在优先保可用性的场景下，以采样方式保留观测能力并限制 SQLite 写入压力。
 
+#### 场景四：Geo 前置拦截（按地域过滤连接）
+
+PipeScope 支持在 TCP 连接建立前进行地理策略检查，可用于：
+- 仅允许中国流量，拦截国外访问
+- 拦截特定省份或城市
+- 仅允许白名单城市访问
+
+**配置示例：**
+
+```yaml
+proxy_rules:
+  # 仅允许中国流量（白名单模式）
+  - id: "china-only"
+    listen: "0.0.0.0:10001"
+    forward: "127.0.0.1:10002"
+    geo_policy:
+      mode: "allow"
+      require_allow_hit: true    # 必须命中规则才放行
+      rules:
+        - country: "CN"          # ISO 3166-1 alpha-2 国家码
+
+  # 拦截特定省份（黑名单模式）
+  - id: "block-provinces"
+    listen: "0.0.0.0:10002"
+    forward: "127.0.0.1:10003"
+    geo_policy:
+      mode: "deny"
+      rules:
+        - country: "CN"
+          provinces: ["福建", "广东"]
+        - country: "CN"
+          adcodes: ["440300"]    # 深圳（精确码）
+
+  # 仅允许白名单城市（精确到行政区划码）
+  - id: "whitelist-cities"
+    listen: "0.0.0.0:10003"
+    forward: "127.0.0.1:10004"
+    geo_policy:
+      mode: "allow"
+      require_allow_hit: true
+      rules:
+        - country: "CN"
+          adcodes:
+            - "110000"           # 北京
+            - "310000"           # 上海
+            - "440100"           # 广州
+```
+
+**Geo Policy 参数说明：**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `mode` | string | 是 | `allow`（白名单）或 `deny`（黑名单） |
+| `require_allow_hit` | bool | 否 | 仅 `allow` 模式有效，为 `true` 时未命中规则则拒绝 |
+| `rules[].country` | string | 是 | ISO 3166-1 alpha-2 国家码（如 `CN`、`US`） |
+| `rules[].provinces` | []string | 否 | 省份名称列表（支持中文，如 `["北京", "广东"]`） |
+| `rules[].cities` | []string | 否 | 城市名称列表（如 `["深圳", "广州"]`） |
+| `rules[].adcodes` | []string | 否 | 6 位行政区划码列表（最精确，如 `["440300"]`） |
+
+**匹配优先级：** adcode > city+province > province > country
+
+**拦截记录：** 被拦截的连接会记录到 `conn_events` 表，`status` 为连接状态，`blocked_reason` 字段记录拦截原因：
+- `geo_denied`：命中 deny 规则
+- `geo_not_in_allowlist`：白名单模式下未命中规则
+
+可在管理端「实时会话」页面按状态筛选查看被拦截的连接。
+
 ### 6. 排错 / FAQ
 
 #### 1) 启动时报配置或文件错误怎么办？
