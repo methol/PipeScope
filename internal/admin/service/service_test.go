@@ -153,7 +153,7 @@ func TestSessionsReturnsCountry(t *testing.T) {
 		Country:    "CN",
 		Province:   "四川",
 		City:       "成都",
-		Adcode:     "5101",
+		Adcode:     "510100",
 		TotalBytes: 100,
 		StartTS:    nowMS - int64((5*time.Minute)/time.Millisecond),
 	})
@@ -174,7 +174,7 @@ func TestSessionsReturnsCountry(t *testing.T) {
 	if items[0].Country != "CN" {
 		t.Fatalf("country=%q want=CN", items[0].Country)
 	}
-	if items[0].Province != "四川" || items[0].City != "成都" || items[0].Adcode != "5101" {
+	if items[0].Province != "四川" || items[0].City != "成都" || items[0].Adcode != "510100" {
 		t.Fatalf("unexpected geo fields: %+v", items[0])
 	}
 }

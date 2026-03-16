@@ -14,9 +14,9 @@ func TestMatcher_Check(t *testing.T) {
 		expected CheckResult
 	}{
 		{
-			name:   "nil policy allows all",
-			policy: nil,
-			info:   GeoInfo{Country: "US"},
+			name:     "nil policy allows all",
+			policy:   nil,
+			info:     GeoInfo{Country: "US"},
 			expected: CheckResult{Allowed: true},
 		},
 		{
@@ -461,11 +461,11 @@ func TestMatcher_AllowCNWithDenyXinjiangTibet(t *testing.T) {
 		allow  bool
 		reason string
 	}{
-		{name: "sichuan allowed", info: GeoInfo{Country: "CN", Province: "四川", City: "成都", Adcode: "5101"}, allow: true},
-		{name: "hubei allowed", info: GeoInfo{Country: "CN", Province: "湖北", City: "武汉", Adcode: "4201"}, allow: true},
-		{name: "guizhou allowed", info: GeoInfo{Country: "CN", Province: "贵州", City: "遵义", Adcode: "5203"}, allow: true},
-		{name: "xinjiang denied", info: GeoInfo{Country: "CN", Province: "新疆", City: "乌鲁木齐", Adcode: "6501"}, allow: false, reason: BlockedReasonDenied},
-		{name: "tibet denied", info: GeoInfo{Country: "CN", Province: "西藏", City: "拉萨", Adcode: "5401"}, allow: false, reason: BlockedReasonDenied},
+		{name: "sichuan allowed", info: GeoInfo{Country: "CN", Province: "四川", City: "成都", Adcode: "510100"}, allow: true},
+		{name: "hubei allowed", info: GeoInfo{Country: "CN", Province: "湖北", City: "武汉", Adcode: "420100"}, allow: true},
+		{name: "guizhou allowed", info: GeoInfo{Country: "CN", Province: "贵州", City: "遵义", Adcode: "520300"}, allow: true},
+		{name: "xinjiang denied", info: GeoInfo{Country: "CN", Province: "新疆", City: "乌鲁木齐", Adcode: "650100"}, allow: false, reason: BlockedReasonDenied},
+		{name: "tibet denied", info: GeoInfo{Country: "CN", Province: "西藏", City: "拉萨", Adcode: "540100"}, allow: false, reason: BlockedReasonDenied},
 	}
 
 	for _, requireAllowHit := range []bool{false, true} {

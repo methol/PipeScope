@@ -86,11 +86,11 @@ func TestLookupFunc_MapsAuditableGeoSamples(t *testing.T) {
 		t.Fatalf("init schema: %v", err)
 	}
 
-	seedLookupAdcode(t, db, areacity.DimAdcode{Adcode: "5101", Province: "四川省", City: "成都市"})
-	seedLookupAdcode(t, db, areacity.DimAdcode{Adcode: "4201", Province: "湖北省", City: "武汉市"})
-	seedLookupAdcode(t, db, areacity.DimAdcode{Adcode: "5203", Province: "贵州省", City: "遵义市"})
-	seedLookupAdcode(t, db, areacity.DimAdcode{Adcode: "6501", Province: "新疆维吾尔自治区", City: "乌鲁木齐市"})
-	seedLookupAdcode(t, db, areacity.DimAdcode{Adcode: "5401", Province: "西藏自治区", City: "拉萨市"})
+	seedLookupAdcode(t, db, areacity.DimAdcode{Adcode: "510100", Province: "四川省", City: "成都市"})
+	seedLookupAdcode(t, db, areacity.DimAdcode{Adcode: "420100", Province: "湖北省", City: "武汉市"})
+	seedLookupAdcode(t, db, areacity.DimAdcode{Adcode: "520300", Province: "贵州省", City: "遵义市"})
+	seedLookupAdcode(t, db, areacity.DimAdcode{Adcode: "650100", Province: "新疆维吾尔自治区", City: "乌鲁木齐市"})
+	seedLookupAdcode(t, db, areacity.DimAdcode{Adcode: "540100", Province: "西藏自治区", City: "拉萨市"})
 
 	samples := []struct {
 		name string
@@ -105,7 +105,7 @@ func TestLookupFunc_MapsAuditableGeoSamples(t *testing.T) {
 			name: "sichuan chengdu",
 			ip:   "61.139.2.69",
 			raw:  "中国|四川省|成都市|电信|CN",
-			want: GeoInfo{Country: "CN", Province: "四川", City: "成都", Adcode: "5101"},
+			want: GeoInfo{Country: "CN", Province: "四川", City: "成都", Adcode: "510100"},
 		},
 		// Source note: 202.103.24.68 is widely listed as a Hubei/Wuhan Telecom DNS IP.
 		// The fixture-injected raw payload keeps this test stable and reviewable.
@@ -113,7 +113,7 @@ func TestLookupFunc_MapsAuditableGeoSamples(t *testing.T) {
 			name: "hubei wuhan",
 			ip:   "202.103.24.68",
 			raw:  "中国|湖北省|武汉市|电信|CN",
-			want: GeoInfo{Country: "CN", Province: "湖北", City: "武汉", Adcode: "4201"},
+			want: GeoInfo{Country: "CN", Province: "湖北", City: "武汉", Adcode: "420100"},
 		},
 		// Source note: 119.0.110.67 appears on public 17CE resolve-IP pages as
 		// "中国贵州遵义电信". Raw ip2region output is injected here for deterministic review.
@@ -121,7 +121,7 @@ func TestLookupFunc_MapsAuditableGeoSamples(t *testing.T) {
 			name: "guizhou zunyi",
 			ip:   "119.0.110.67",
 			raw:  "中国|贵州省|遵义市|电信|CN",
-			want: GeoInfo{Country: "CN", Province: "贵州", City: "遵义", Adcode: "5203"},
+			want: GeoInfo{Country: "CN", Province: "贵州", City: "遵义", Adcode: "520300"},
 		},
 		// Source note: 61.128.114.166 is commonly listed as a Xinjiang Telecom DNS IP.
 		// We fixture the raw lookup result to audit the Xinjiang -> Urumqi mapping path.
@@ -129,7 +129,7 @@ func TestLookupFunc_MapsAuditableGeoSamples(t *testing.T) {
 			name: "xinjiang urumqi",
 			ip:   "61.128.114.166",
 			raw:  "中国|新疆维吾尔自治区|乌鲁木齐市|电信|CN",
-			want: GeoInfo{Country: "CN", Province: "新疆", City: "乌鲁木齐", Adcode: "6501"},
+			want: GeoInfo{Country: "CN", Province: "新疆", City: "乌鲁木齐", Adcode: "650100"},
 		},
 		// Source note: 202.98.224.68 is commonly published as a Tibet/Lhasa Telecom DNS IP.
 		// The test asserts stable field mapping without trusting live/offline DB behavior.
@@ -137,7 +137,7 @@ func TestLookupFunc_MapsAuditableGeoSamples(t *testing.T) {
 			name: "tibet lhasa",
 			ip:   "202.98.224.68",
 			raw:  "中国|西藏自治区|拉萨市|电信|CN",
-			want: GeoInfo{Country: "CN", Province: "西藏", City: "拉萨", Adcode: "5401"},
+			want: GeoInfo{Country: "CN", Province: "西藏", City: "拉萨", Adcode: "540100"},
 		},
 	}
 
