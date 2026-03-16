@@ -16,6 +16,7 @@ type QueryService interface {
 	ChinaMap(ctx context.Context, q service.MapQuery) ([]service.MapPoint, error)
 	Rules(ctx context.Context, q service.RulesQuery) ([]service.RulePoint, error)
 	Sessions(ctx context.Context, q service.SessionsQuery) ([]service.SessionItem, error)
+	SessionsOptions(ctx context.Context, q service.SessionsOptionsQuery) (service.SessionsOptions, error)
 	Overview(ctx context.Context, window time.Duration) (service.Overview, error)
 	ProvinceMap(ctx context.Context, q service.ProvinceQuery) ([]service.MapPoint, error)
 	ProvinceSummary(ctx context.Context, q service.MapQuery) ([]service.ProvinceSummaryPoint, error)
@@ -42,6 +43,9 @@ func (h *handlers) handleMapChina(w nethttp.ResponseWriter, r *nethttp.Request) 
 	points, err := h.svc.ChinaMap(ctx, service.MapQuery{
 		Window: parseWindow(r.URL.Query().Get("window"), 15*time.Minute),
 		Metric: parseMetric(r.URL.Query().Get("metric")),
+		Limit:  parseBoundedInt(r.URL.Query().Get("limit"), 100, 1, 1000),
+		RuleID: r.URL.Query().Get("rule_id"),
+		Status: r.URL.Query().Get("status"),
 	})
 	if err != nil {
 		writeQueryError(w, err)
@@ -108,6 +112,19 @@ func (h *handlers) handleSessions(w nethttp.ResponseWriter, r *nethttp.Request) 
 	writeJSON(w, nethttp.StatusOK, map[string]any{"items": points})
 }
 
+func (h *handlers) handleSessionsOptions(w nethttp.ResponseWriter, r *nethttp.Request) {
+	ctx, cancel := h.queryContext(r.Context())
+	defer cancel()
+	result, err := h.svc.SessionsOptions(ctx, service.SessionsOptionsQuery{
+		Window: parseWindow(r.URL.Query().Get("window"), 15*time.Minute),
+	})
+	if err != nil {
+		writeQueryError(w, err)
+		return
+	}
+	writeJSON(w, nethttp.StatusOK, result)
+}
+
 func (h *handlers) handleOverview(w nethttp.ResponseWriter, r *nethttp.Request) {
 	ctx, cancel := h.queryContext(r.Context())
 	defer cancel()
@@ -131,7 +148,7 @@ func (h *handlers) handleAnalytics(w nethttp.ResponseWriter, r *nethttp.Request)
 		Province: r.URL.Query().Get("province"),
 		City:     r.URL.Query().Get("city"),
 		Status:   r.URL.Query().Get("status"),
-		TopN:     parseBoundedInt(r.URL.Query().Get("top_n"), 10, 1, 100),
+		TopN:     parseBoundedInt(r.URL.Query().Get("top_n"), 10, 1, 1000),
 	})
 	if err != nil {
 		writeQueryError(w, err)

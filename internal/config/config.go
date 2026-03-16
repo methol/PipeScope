@@ -27,9 +27,26 @@ type DataConfig struct {
 }
 
 type ProxyRule struct {
-	ID      string `yaml:"id"`
-	Listen  string `yaml:"listen"`
-	Forward string `yaml:"forward"`
+	ID        string     `yaml:"id"`
+	Listen    string     `yaml:"listen"`
+	Forward   string     `yaml:"forward"`
+	GeoPolicy *GeoPolicy `yaml:"geo_policy"`
+}
+
+// GeoPolicy defines geo-based traffic filtering policy
+// Matching order: deny rules first, then allow rules, finally fallback to require_allow_hit
+type GeoPolicy struct {
+	RequireAllowHit bool      `yaml:"require_allow_hit"` // when no rules match: true=deny, false=allow
+	Allow           []GeoRule `yaml:"allow"`             // allow rules (checked after deny)
+	Deny            []GeoRule `yaml:"deny"`              // deny rules (checked first)
+}
+
+// GeoRule defines a single geo filter rule
+type GeoRule struct {
+	Country   string   `yaml:"country"`   // ISO 3166-1 alpha-2 country code
+	Provinces []string `yaml:"provinces"` // province names (optional)
+	Cities    []string `yaml:"cities"`    // city names (optional)
+	Adcodes   []string `yaml:"adcodes"`   // administrative division codes (optional)
 }
 
 type WriterConfig struct {
@@ -158,8 +175,31 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("legacy external geo/ip config is no longer supported; use embedded data assets")
 	}
 	applyDefaults(&cfg)
+	normalizeGeoPolicy(&cfg)
+
+	// Validate configuration
+	if errs := cfg.Validate(); len(errs) > 0 {
+		return nil, errs
+	}
 
 	return &cfg, nil
+}
+
+// normalizeGeoPolicy normalizes geo policy config values
+func normalizeGeoPolicy(cfg *Config) {
+	for i := range cfg.ProxyRules {
+		if cfg.ProxyRules[i].GeoPolicy != nil {
+			policy := cfg.ProxyRules[i].GeoPolicy
+			// Normalize allow rules
+			for j := range policy.Allow {
+				policy.Allow[j].Country = NormalizeCountryCode(policy.Allow[j].Country)
+			}
+			// Normalize deny rules
+			for j := range policy.Deny {
+				policy.Deny[j].Country = NormalizeCountryCode(policy.Deny[j].Country)
+			}
+		}
+	}
 }
 
 func applyDefaults(cfg *Config) {

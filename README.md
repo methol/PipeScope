@@ -167,6 +167,206 @@ writer:
 
 适合在优先保可用性的场景下，以采样方式保留观测能力并限制 SQLite 写入压力。
 
+#### 场景四：Geo 前置拦截（按地域过滤连接）
+
+PipeScope 支持在 TCP 连接建立前进行地理策略检查，可用于：
+- 仅允许中国流量，拦截国外访问
+- 拦截特定省份或城市
+- 仅允许白名单城市访问
+- **允许中国但禁止特定省份/城市**（组合模式）
+
+##### Geo Policy 配置字段
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `require_allow_hit` | bool | 否 | 当未匹配任何规则时的默认行为：`true`=拒绝，`false`=放行（默认） |
+| `allow` | []GeoRule | 否 | 允许规则列表（deny 规则后检查） |
+| `deny` | []GeoRule | 否 | 拒绝规则列表（优先检查） |
+| `GeoRule.country` | string | 是 | ISO 3166-1 alpha-2 国家码（如 `CN`、`US`、`JP`），必须大写 |
+| `GeoRule.provinces` | []string | 否 | 省份名称列表，支持中文（如 `["北京", "广东"]`），会自动标准化（去"省"、"市"后缀） |
+| `GeoRule.cities` | []string | 否 | 城市名称列表（如 `["深圳", "广州"]`），需配合 `provinces` 使用以避免同名城市歧义 |
+| `GeoRule.adcodes` | []string | 否 | 6 位行政区划码列表（最精确，如 `["440300"]`），仅国内 IP 有效 |
+
+##### 匹配逻辑
+
+**匹配顺序**：
+1. **deny 规则**：先检查，命中则立即拒绝
+2. **allow 规则**：再检查，命中则放行
+3. **默认行为**：无任何规则命中时，按 `require_allow_hit` 决定（`true`=拒绝，`false`=放行）
+
+**规则内匹配优先级**：adcode > city+province > province > country
+
+**规则内关系**：`provinces` 与 `cities` 是 AND 关系（需同时匹配）；`provinces`、`cities`、`adcodes` 之间是 OR 关系
+
+**多规则匹配**：同类型规则（allow 或 deny）按配置顺序匹配，首条匹配生效
+
+##### 配置行为表
+
+| 有 allow 规则 | 有 deny 规则 | require_allow_hit | 命中 deny | 命中 allow | 都未命中 | 结果 |
+|--------------|-------------|-------------------|-----------|-----------|---------|------|
+| ✓ | ✓ | 任意 | ✓ | - | - | **拒绝** |
+| ✓ | ✓ | 任意 | ✗ | ✓ | - | **放行** |
+| ✓ | ✓ | true | ✗ | ✗ | ✓ | **拒绝** |
+| ✓ | ✓ | false | ✗ | ✗ | ✓ | **放行** |
+| ✓ | ✗ | true | - | ✓ | - | **放行** |
+| ✓ | ✗ | true | - | ✗ | ✓ | **拒绝** |
+| ✗ | ✓ | 任意 | ✓ | - | - | **拒绝** |
+| ✗ | ✓ | 任意 | ✗ | - | - | **放行** |
+| ✗ | ✗ | true | - | - | ✓ | **拒绝**（全部拒绝） |
+| ✗ | ✗ | false | - | - | ✓ | **放行**（全部放行） |
+
+##### 典型配置示例
+
+**示例 1：仅允许中国流量（禁止国外访问）**
+
+```yaml
+proxy_rules:
+  - id: "china-only"
+    listen: "0.0.0.0:10001"
+    forward: "127.0.0.1:10002"
+    geo_policy:
+      require_allow_hit: true     # 未匹配规则则拒绝
+      allow:
+        - country: "CN"           # 仅允许中国
+      deny: []
+```
+
+**示例 2：禁止特定省份（黑名单模式）**
+
+```yaml
+proxy_rules:
+  - id: "block-provinces"
+    listen: "0.0.0.0:10002"
+    forward: "127.0.0.1:10003"
+    geo_policy:
+      require_allow_hit: false    # 未匹配规则则放行
+      allow: []
+      deny:
+        - country: "CN"
+          provinces: ["福建", "广东"]
+        - country: "CN"
+          adcodes: ["440300"]     # 深圳（精确到行政区划码）
+```
+
+**示例 3：仅允许白名单城市（精确到行政区划码）**
+
+```yaml
+proxy_rules:
+  - id: "whitelist-cities"
+    listen: "0.0.0.0:10003"
+    forward: "127.0.0.1:10004"
+    geo_policy:
+      require_allow_hit: true     # 未匹配规则则拒绝
+      allow:
+        - country: "CN"
+          adcodes:
+            - "110000"            # 北京
+            - "310000"            # 上海
+            - "440100"            # 广州
+      deny: []
+```
+
+**示例 4：允许中国但禁止特定省份/城市（组合模式）**
+
+```yaml
+proxy_rules:
+  - id: "china-except-some"
+    listen: "0.0.0.0:10004"
+    forward: "127.0.0.1:10005"
+    geo_policy:
+      require_allow_hit: true     # 必须命中 allow 规则
+      allow:
+        - country: "CN"           # 允许中国
+      deny:                       # 但排除这些
+        - country: "CN"
+          provinces: ["福建", "广东"]
+        - country: "CN"
+          adcodes: ["440300"]     # 深圳（广东省）
+```
+
+上述配置效果：
+- 福建省流量：命中 deny，**拒绝**
+- 广东省深圳：命中 deny，**拒绝**
+- 广东省其他城市：命中 allow，未命中 deny，**放行**
+- 中国其他省份：命中 allow，未命中 deny，**放行**
+- 国外流量：未命中任何规则，require_allow_hit=true，**拒绝**
+
+##### 拦截记录与状态查询
+
+被拦截的连接会记录到 SQLite 的 `conn_events` 表，通过以下字段标识：
+
+| 字段 | 值 | 说明 |
+|------|------|------|
+| `status` | `blocked` | 连接被拦截（另有 `ok`、`dial_fail`、`timeout`、`io_err`） |
+| `blocked_reason` | `geo_denied` | 命中 deny 规则 |
+| `blocked_reason` | `geo_not_in_allowlist` | 白名单模式下未命中规则 |
+
+**UI 查看路径：**
+- 管理端「实时会话」页面（`http://127.0.0.1:9100`）可查看 `blocked_reason` 列
+- 使用 rule_id 下拉筛选特定规则的连接
+
+**SQL 查询示例：**
+
+```sql
+-- 查询被 geo 策略拦截的连接
+SELECT * FROM conn_events WHERE blocked_reason != '' ORDER BY start_ts DESC LIMIT 100;
+
+-- 统计各拦截原因
+SELECT blocked_reason, COUNT(*) FROM conn_events WHERE blocked_reason != '' GROUP BY blocked_reason;
+```
+
+##### 常见问题与排错
+
+**Q1: 配置后不生效，所有流量都放行？**
+
+检查：
+- `geo_policy` 是否正确缩进在 `proxy_rules[*]` 下
+- `require_allow_hit` 是否设置正确：`true` 表示未匹配规则则拒绝
+- 国家码是否为大写（如 `CN` 而非 `cn`）
+- 是否有正确的 `allow` 规则
+
+**Q2: 部分国内 IP 被错误拦截？**
+
+可能原因：
+- IP 库数据不完整，某些 IP 无法解析到省份/城市
+- adcode 匹配仅对国内 IP 有效，国外 IP 无 adcode 字段
+- 同名城市歧义（如"吉林"省市同名），建议使用 adcode 精确匹配
+
+**Q3: 如何验证配置是否正确？**
+
+启动时会自动校验配置，错误配置会输出警告。也可手动检查：
+
+```bash
+# 查看启动日志是否有配置错误
+./bin/pipescope -config assets/config.example.yaml 2>&1 | grep -i "geo\|valid"
+```
+
+**Q4: 国外 IP 的省份/城市字段为空，如何匹配？**
+
+国外 IP 通常只有国家码，省份/城市/adcode 字段为空。匹配时：
+- 仅配置 `country` 字段即可匹配国外 IP
+- 如需精确匹配国外地区，建议使用其他 IP 库或外部服务
+
+**Q5: 规则顺序有影响吗？**
+
+有。同类型规则（allow 或 deny）按配置顺序匹配，首条匹配生效。建议：
+- 精确规则在前（如 adcode）
+- 宽泛规则在后（如仅 country）
+
+**Q6: 如何实现"允许中国但禁止某省"？**
+
+使用组合模式：
+```yaml
+geo_policy:
+  require_allow_hit: true
+  allow:
+    - country: "CN"
+  deny:
+    - country: "CN"
+      provinces: ["福建"]
+```
+deny 规则优先检查，福建流量会被拒绝；其他中国流量命中 allow 规则放行；国外流量未命中任何规则，require_allow_hit=true 则拒绝。
+
 ### 6. 排错 / FAQ
 
 #### 1) 启动时报配置或文件错误怎么办？

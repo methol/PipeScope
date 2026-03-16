@@ -25,6 +25,7 @@ func NewServer(svc QueryService, timeout time.Duration) *Server {
 	mux.HandleFunc("/api/map/province-summary", h.handleMapProvinceSummary)
 	mux.HandleFunc("/api/rules", h.handleRules)
 	mux.HandleFunc("/api/sessions", h.handleSessions)
+	mux.HandleFunc("/api/sessions/options", h.handleSessionsOptions)
 	mux.HandleFunc("/api/overview", h.handleOverview)
 	mux.HandleFunc("/api/analytics", h.handleAnalytics)
 	mux.HandleFunc("/api/analytics/options", h.handleAnalyticsOptions)

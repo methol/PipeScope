@@ -28,6 +28,7 @@ export interface SessionItem {
   province: string
   city: string
   adcode: string
+  blocked_reason: string
 }
 
 export interface Overview {
@@ -67,6 +68,10 @@ export interface AnalyticsOptions {
   statuses: string[]
 }
 
+export interface SessionsOptions {
+  rules: string[]
+}
+
 async function fetchJSON<T>(url: string): Promise<T> {
   const rsp = await fetch(url)
   if (!rsp.ok) {
@@ -75,8 +80,13 @@ async function fetchJSON<T>(url: string): Promise<T> {
   return rsp.json() as Promise<T>
 }
 
-export async function fetchChinaMap(params: { window: string; metric: string }): Promise<MapPoint[]> {
-  const q = new URLSearchParams(params)
+export async function fetchChinaMap(params: { window: string; metric: string; limit?: string; rule_id?: string; status?: string }): Promise<MapPoint[]> {
+  const q = new URLSearchParams()
+  q.set('window', params.window)
+  q.set('metric', params.metric)
+  if (params.limit) q.set('limit', params.limit)
+  if (params.rule_id) q.set('rule_id', params.rule_id)
+  if (params.status) q.set('status', params.status)
   const rsp = await fetchJSON<{ items: MapPoint[] }>(`/api/map/china?${q.toString()}`)
   return rsp.items ?? []
 }
@@ -121,6 +131,11 @@ export async function fetchSessions(params: {
   if (params.offset) q.set('offset', params.offset)
   const rsp = await fetchJSON<{ items: SessionItem[] }>(`/api/sessions?${q.toString()}`)
   return rsp.items ?? []
+}
+
+export async function fetchSessionsOptions(params: { window: string }): Promise<SessionsOptions> {
+  const q = new URLSearchParams(params)
+  return fetchJSON<SessionsOptions>(`/api/sessions/options?${q.toString()}`)
 }
 
 export async function fetchOverview(params: { window: string }): Promise<Overview> {

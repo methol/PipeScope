@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import * as echarts from 'echarts'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { fetchChinaMap, type MapPoint } from '../api/client'
+import { fetchChinaMap, fetchAnalyticsOptions, type MapPoint, type AnalyticsOptions } from '../api/client'
 import { formatBytes } from '../utils/format'
 import { createCityJoinKeyResolver, normalizeCityGeoFeatures } from './mapCity'
 
@@ -10,9 +10,19 @@ const CHINA_GEOJSON_URL = '/maps/china-cities.geojson'
 
 const windowText = ref('1h')
 const metric = ref('conn')
+const limit = ref('100')
+const ruleID = ref('')
+const status = ref('')
 const loading = ref(false)
+const optionsLoading = ref(false)
 const error = ref('')
 const cityItems = ref<MapPoint[]>([])
+const options = ref<AnalyticsOptions>({
+  rules: [],
+  provinces: [],
+  cities: [],
+  statuses: [],
+})
 const resolveCityJoinKey = ref<(item: MapPoint) => string>((item) => String(item.adcode || '').trim())
 const mapCityNameByKey = ref<Map<string, string>>(new Map())
 
@@ -24,6 +34,19 @@ let mapLoading: Promise<void> | null = null
 const title = computed(() => (metric.value === 'bytes' ? '城市流量热度（市级边界）' : '城市连接热度（市级边界）'))
 const emptyHint = computed(() => (!loading.value && !error.value && cityItems.value.length === 0 ? '当前窗口暂无城市指标数据' : ''))
 const displayValue = (v: number) => (metric.value === 'bytes' ? formatBytes(v) : String(v))
+
+async function loadOptions() {
+  optionsLoading.value = true
+  try {
+    options.value = await fetchAnalyticsOptions({
+      window: windowText.value,
+      rule_id: ruleID.value,
+      status: status.value,
+    })
+  } finally {
+    optionsLoading.value = false
+  }
+}
 
 async function ensureChinaMap() {
   if (mapReady) return
@@ -59,7 +82,13 @@ async function load() {
   error.value = ''
   try {
     await ensureChinaMap()
-    cityItems.value = await fetchChinaMap({ window: windowText.value, metric: metric.value })
+    cityItems.value = await fetchChinaMap({
+      window: windowText.value,
+      metric: metric.value,
+      limit: limit.value,
+      rule_id: ruleID.value,
+      status: status.value,
+    })
     render()
   } catch (e) {
     cityItems.value = []
@@ -112,6 +141,7 @@ function render() {
         color: ['#e8f1ff', '#9dc5f8', '#4f92ea', '#225db8'],
       },
       text: ['高', '低'],
+      formatter: (value: number) => (metric.value === 'bytes' ? formatBytes(value) : String(value)),
     },
     series: [
       {
@@ -138,12 +168,17 @@ function render() {
   })
 }
 
-watch([windowText, metric], () => {
+watch(windowText, async () => {
+  await loadOptions()
+})
+
+watch([metric, limit, ruleID, status], () => {
   void load()
 })
 
 onMounted(async () => {
   await nextTick()
+  await loadOptions()
   await load()
   window.addEventListener('resize', onResize)
 })
@@ -177,10 +212,33 @@ function onResize() {
           </select>
         </label>
         <label>
+          Rule
+          <select v-model="ruleID" :disabled="optionsLoading">
+            <option value="">全部</option>
+            <option v-for="item in options.rules" :key="item" :value="item">{{ item }}</option>
+          </select>
+        </label>
+        <label>
+          状态
+          <select v-model="status" :disabled="optionsLoading">
+            <option value="">全部</option>
+            <option v-for="item in options.statuses" :key="item" :value="item">{{ item }}</option>
+          </select>
+        </label>
+        <label>
           指标
           <select v-model="metric">
             <option value="conn">连接数</option>
             <option value="bytes">字节数</option>
+          </select>
+        </label>
+        <label>
+          Top
+          <select v-model="limit">
+            <option value="10">10</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="1000">1000</option>
           </select>
         </label>
         <button class="btn" @click="load">手动刷新</button>
@@ -188,6 +246,7 @@ function onResize() {
     </div>
 
     <p class="meta">{{ title }} · 分析型页面（不自动刷新）</p>
+    <p v-if="optionsLoading" class="meta">筛选项加载中...</p>
     <p v-if="loading" class="meta">加载中...</p>
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="emptyHint" class="meta">{{ emptyHint }}</p>

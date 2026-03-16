@@ -138,8 +138,8 @@ func (w *Writer) insertBatch(ctx context.Context, batch []session.Event) error {
 INSERT INTO conn_events(
   rule_id, listen_port, src_addr, src_ip, dst_addr, dst_host, dst_port,
   start_ts, end_ts, duration_ms, up_bytes, down_bytes, total_bytes,
-  status, err_msg, province, city, adcode, lat, lng
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  status, err_msg, blocked_reason, province, city, adcode, lat, lng
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `)
 	if err != nil {
 		_ = tx.Rollback()
@@ -165,6 +165,7 @@ INSERT INTO conn_events(
 			row.evt.TotalBytes,
 			row.evt.Status,
 			row.evt.Error,
+			row.evt.BlockedReason,
 			row.geo.Province,
 			row.geo.City,
 			row.geo.Adcode,

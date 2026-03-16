@@ -10,6 +10,9 @@ const (
 type MapQuery struct {
 	Window time.Duration
 	Metric string
+	Limit  int
+	RuleID string
+	Status string
 }
 
 type RulesQuery struct {
@@ -21,6 +24,10 @@ type SessionsQuery struct {
 	RuleID string
 	Limit  int
 	Offset int
+}
+
+type SessionsOptionsQuery struct {
+	Window time.Duration
 }
 
 type AnalyticsQuery struct {
@@ -67,20 +74,25 @@ type RulePoint struct {
 }
 
 type SessionItem struct {
-	ID         int64  `json:"id"`
-	RuleID     string `json:"rule_id"`
-	SrcAddr    string `json:"src_addr"`
-	DstAddr    string `json:"dst_addr"`
-	Status     string `json:"status"`
-	UpBytes    int64  `json:"up_bytes"`
-	DownBytes  int64  `json:"down_bytes"`
-	TotalBytes int64  `json:"total_bytes"`
-	StartTS    int64  `json:"start_ts"`
-	EndTS      int64  `json:"end_ts"`
-	DurationMS int64  `json:"duration_ms"`
-	Province   string `json:"province"`
-	City       string `json:"city"`
-	Adcode     string `json:"adcode"`
+	ID            int64  `json:"id"`
+	RuleID        string `json:"rule_id"`
+	SrcAddr       string `json:"src_addr"`
+	DstAddr       string `json:"dst_addr"`
+	Status        string `json:"status"`
+	UpBytes       int64  `json:"up_bytes"`
+	DownBytes     int64  `json:"down_bytes"`
+	TotalBytes    int64  `json:"total_bytes"`
+	StartTS       int64  `json:"start_ts"`
+	EndTS         int64  `json:"end_ts"`
+	DurationMS    int64  `json:"duration_ms"`
+	Province      string `json:"province"`
+	City          string `json:"city"`
+	Adcode        string `json:"adcode"`
+	BlockedReason string `json:"blocked_reason"`
+}
+
+type SessionsOptions struct {
+	Rules []string `json:"rules"`
 }
 
 type Overview struct {

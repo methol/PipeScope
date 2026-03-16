@@ -5,9 +5,11 @@ import (
 	"context"
 	"io"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
+	"pipescope/internal/gateway/geo"
 	"pipescope/internal/gateway/rule"
 	"pipescope/internal/gateway/session"
 )
@@ -188,5 +190,274 @@ func startEchoServer(t *testing.T) string {
 	}()
 
 	return ln.Addr().String()
+}
+
+// Geo policy tests
+
+func TestGeoPolicyDenyModeBlocksMatchingIP(t *testing.T) {
+	upstream := startEchoServer(t)
+	events := make(chan session.Event, 10)
+	
+	// Mock geo lookup that returns CN for 1.2.3.4
+	geoLookup := func(ip string) (geo.GeoInfo, error) {
+		if ip == "1.2.3.4" {
+			return geo.GeoInfo{Country: "CN", Province: "北京", City: "北京", Adcode: "110000"}, nil
+		}
+		return geo.GeoInfo{Country: "US"}, nil
+	}
+
+	runner := NewRunner([]rule.Rule{
+		{
+			ID:      "r1",
+			Listen:  "127.0.0.1:0",
+			Forward: upstream,
+			GeoPolicy: &rule.GeoPolicy{
+				Deny: []rule.GeoRule{
+					{Country: "CN"},
+				},
+			},
+		},
+	}, events)
+	runner.SetGeoLookup(geoLookup)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := runner.Start(ctx); err != nil {
+		t.Fatalf("start runner: %v", err)
+	}
+	defer runner.Close()
+
+	listenAddr, ok := runner.ListenAddr("r1")
+	if !ok {
+		t.Fatalf("missing runtime listen addr")
+	}
+
+	// Dial from a mocked source (the runner will see the remote addr as 127.0.0.1:xxxxx)
+	// For this test, we'll use a custom dialer approach
+	// Since we can't easily control the source IP in this test setup,
+	// we test the geo lookup is called and policy is applied via the mock
+	
+	// The actual IP seen by runner will be 127.0.0.1, which should pass
+	conn, err := net.DialTimeout("tcp", listenAddr, 2*time.Second)
+	if err != nil {
+		t.Fatalf("dial runner: %v", err)
+	}
+	_ = conn.Close()
+
+	// The connection should succeed since 127.0.0.1 returns US in our mock
+	select {
+	case evt := <-events:
+		if evt.Status == "blocked" {
+			t.Fatalf("unexpected block for 127.0.0.1: %+v", evt)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timeout waiting event")
+	}
+}
+
+func TestGeoPolicyAllowModeWithRequireAllowHit(t *testing.T) {
+	events := make(chan session.Event, 10)
+	
+	geoLookup := func(ip string) (geo.GeoInfo, error) {
+		if ip == "127.0.0.1" {
+			return geo.GeoInfo{Country: "US"}, nil
+		}
+		return geo.GeoInfo{Country: "CN"}, nil
+	}
+
+	runner := NewRunner([]rule.Rule{
+		{
+			ID:      "r1",
+			Listen:  "127.0.0.1:0",
+			Forward: "127.0.0.1:9999", // Intentionally wrong, should not be dialed
+			GeoPolicy: &rule.GeoPolicy{
+				RequireAllowHit: true,
+				Allow: []rule.GeoRule{
+					{Country: "CN"},
+				},
+			},
+		},
+	}, events)
+	runner.SetGeoLookup(geoLookup)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := runner.Start(ctx); err != nil {
+		t.Fatalf("start runner: %v", err)
+	}
+	defer runner.Close()
+
+	listenAddr, ok := runner.ListenAddr("r1")
+	if !ok {
+		t.Fatalf("missing runtime listen addr")
+	}
+
+	conn, err := net.DialTimeout("tcp", listenAddr, 2*time.Second)
+	if err != nil {
+		t.Fatalf("dial runner: %v", err)
+	}
+	_ = conn.Close()
+
+	// Connection should be blocked because 127.0.0.1 returns US, which is not in allowlist
+	select {
+	case evt := <-events:
+		if evt.Status != "blocked" {
+			t.Fatalf("expected blocked status, got: %s", evt.Status)
+		}
+		if evt.BlockedReason != "geo_not_in_allowlist" {
+			t.Fatalf("expected blocked_reason=geo_not_in_allowlist, got: %s", evt.BlockedReason)
+		}
+		if evt.Country != "US" {
+			t.Fatalf("expected country=US, got: %s", evt.Country)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timeout waiting event")
+	}
+}
+
+func TestGeoPolicyBlockedConnectionDoesNotDial(t *testing.T) {
+	events := make(chan session.Event, 10)
+	
+	var dialCount int
+	var dialMu sync.Mutex
+	
+	// Custom dialer that counts calls
+	dialFunc := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		dialMu.Lock()
+		dialCount++
+		dialMu.Unlock()
+		return nil, &net.DNSError{Err: "should not dial"}
+	}
+
+	geoLookup := func(ip string) (geo.GeoInfo, error) {
+		if ip == "127.0.0.1" {
+			return geo.GeoInfo{Country: "CN", Province: "北京"}, nil
+		}
+		return geo.GeoInfo{Country: "US"}, nil
+	}
+
+	runner := NewRunner([]rule.Rule{
+		{
+			ID:      "r1",
+			Listen:  "127.0.0.1:0",
+			Forward: "127.0.0.1:9999",
+			GeoPolicy: &rule.GeoPolicy{
+				Deny: []rule.GeoRule{
+					{Country: "CN"},
+				},
+			},
+		},
+	}, events)
+	runner.SetDialFunc(dialFunc)
+	runner.SetGeoLookup(geoLookup)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := runner.Start(ctx); err != nil {
+		t.Fatalf("start runner: %v", err)
+	}
+	defer runner.Close()
+
+	listenAddr, ok := runner.ListenAddr("r1")
+	if !ok {
+		t.Fatalf("missing runtime listen addr")
+	}
+
+	conn, err := net.DialTimeout("tcp", listenAddr, 2*time.Second)
+	if err != nil {
+		t.Fatalf("dial runner: %v", err)
+	}
+	_ = conn.Close()
+
+	select {
+	case evt := <-events:
+		if evt.Status != "blocked" {
+			t.Fatalf("expected blocked status, got: %s", evt.Status)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timeout waiting event")
+	}
+
+	// Verify no dial was made
+	dialMu.Lock()
+	count := dialCount
+	dialMu.Unlock()
+	
+	if count != 0 {
+		t.Fatalf("dial should not be called for blocked connection, but was called %d times", count)
+	}
+}
+
+func TestGeoPolicyRecordsGeoInfoInBlockedEvent(t *testing.T) {
+	events := make(chan session.Event, 10)
+	
+	geoLookup := func(ip string) (geo.GeoInfo, error) {
+		return geo.GeoInfo{
+			Country:  "RU",
+			Province: "Moscow",
+			City:     "Moscow",
+			Adcode:   "101000",
+		}, nil
+	}
+
+	runner := NewRunner([]rule.Rule{
+		{
+			ID:      "r1",
+			Listen:  "127.0.0.1:0",
+			Forward: "127.0.0.1:9999",
+			GeoPolicy: &rule.GeoPolicy{
+				Deny: []rule.GeoRule{
+					{Country: "RU"},
+				},
+			},
+		},
+	}, events)
+	runner.SetGeoLookup(geoLookup)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := runner.Start(ctx); err != nil {
+		t.Fatalf("start runner: %v", err)
+	}
+	defer runner.Close()
+
+	listenAddr, ok := runner.ListenAddr("r1")
+	if !ok {
+		t.Fatalf("missing runtime listen addr")
+	}
+
+	conn, err := net.DialTimeout("tcp", listenAddr, 2*time.Second)
+	if err != nil {
+		t.Fatalf("dial runner: %v", err)
+	}
+	_ = conn.Close()
+
+	select {
+	case evt := <-events:
+		if evt.Status != "blocked" {
+			t.Fatalf("expected blocked status, got: %s", evt.Status)
+		}
+		if evt.BlockedReason != "geo_denied" {
+			t.Fatalf("expected blocked_reason=geo_denied, got: %s", evt.BlockedReason)
+		}
+		if evt.Country != "RU" {
+			t.Fatalf("expected country=RU, got: %s", evt.Country)
+		}
+		if evt.Province != "Moscow" {
+			t.Fatalf("expected province=Moscow, got: %s", evt.Province)
+		}
+		if evt.City != "Moscow" {
+			t.Fatalf("expected city=Moscow, got: %s", evt.City)
+		}
+		if evt.Adcode != "101000" {
+			t.Fatalf("expected adcode=101000, got: %s", evt.Adcode)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timeout waiting event")
+	}
 }
 

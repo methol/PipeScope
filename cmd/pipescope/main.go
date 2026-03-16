@@ -20,6 +20,7 @@ import (
 	adminservice "pipescope/internal/admin/service"
 	"pipescope/internal/config"
 	"pipescope/internal/embeddeddata"
+	"pipescope/internal/gateway/geo"
 	"pipescope/internal/gateway/proxy"
 	"pipescope/internal/gateway/rule"
 	"pipescope/internal/gateway/session"
@@ -110,12 +111,17 @@ func run(ctx context.Context, cfg *config.Config) error {
 		writerErrCh <- writer.Run(writerCtx)
 	}()
 
-	runner := proxy.NewRunner(convertRules(cfg.ProxyRules), events)
+	rules := convertRules(cfg.ProxyRules)
+	runner := proxy.NewRunner(rules, events)
 	runner.SetTimeouts(
 		time.Duration(cfg.Timeouts.DialMS)*time.Millisecond,
 		time.Duration(cfg.Timeouts.IdleMS)*time.Millisecond,
 	)
 	runner.SetQueuePolicy(cfg.Writer.FullQueuePolicy, cfg.Writer.SampleRate)
+
+	// Set up geo lookup for traffic filtering
+	runner.SetGeoLookup(geo.LookupFunc(regionSearcher, areaMatcher))
+
 	if err := runner.Start(ctx); err != nil {
 		return err
 	}
@@ -192,7 +198,7 @@ func newAdminServer(addr string, handler nethttp.Handler) *nethttp.Server {
 	}
 }
 
-func initAreaCityMatcher(ctx context.Context, db *sql.DB, cfg *config.Config) (sqlitestore.AdcodeMatcher, error) {
+func initAreaCityMatcher(ctx context.Context, db *sql.DB, cfg *config.Config) (*areacity.Matcher, error) {
 	cacheDir, err := embeddeddata.DefaultCacheDir()
 	if err != nil {
 		return nil, fmt.Errorf("resolve embedded data cache dir: %w", err)
@@ -211,10 +217,35 @@ func newAdminHandler(db *sql.DB) nethttp.Handler {
 func convertRules(src []config.ProxyRule) []rule.Rule {
 	out := make([]rule.Rule, 0, len(src))
 	for _, r := range src {
+		var geoPolicy *rule.GeoPolicy
+		if r.GeoPolicy != nil {
+			geoPolicy = &rule.GeoPolicy{
+				RequireAllowHit: r.GeoPolicy.RequireAllowHit,
+				Allow:           make([]rule.GeoRule, len(r.GeoPolicy.Allow)),
+				Deny:            make([]rule.GeoRule, len(r.GeoPolicy.Deny)),
+			}
+			for i, gr := range r.GeoPolicy.Allow {
+				geoPolicy.Allow[i] = rule.GeoRule{
+					Country:   gr.Country,
+					Provinces: gr.Provinces,
+					Cities:    gr.Cities,
+					Adcodes:   gr.Adcodes,
+				}
+			}
+			for i, gr := range r.GeoPolicy.Deny {
+				geoPolicy.Deny[i] = rule.GeoRule{
+					Country:   gr.Country,
+					Provinces: gr.Provinces,
+					Cities:    gr.Cities,
+					Adcodes:   gr.Adcodes,
+				}
+			}
+		}
 		out = append(out, rule.Rule{
-			ID:      r.ID,
-			Listen:  r.Listen,
-			Forward: r.Forward,
+			ID:        r.ID,
+			Listen:    r.Listen,
+			Forward:   r.Forward,
+			GeoPolicy: geoPolicy,
 		})
 	}
 	return out

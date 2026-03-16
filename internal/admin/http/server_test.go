@@ -109,6 +109,10 @@ func (fakeService) AnalyticsOptions(context.Context, service.AnalyticsOptionsQue
 	return service.AnalyticsOptions{}, nil
 }
 
+func (fakeService) SessionsOptions(context.Context, service.SessionsOptionsQuery) (service.SessionsOptions, error) {
+	return service.SessionsOptions{}, nil
+}
+
 type timeoutService struct{}
 
 type wrappedTimeoutService struct{}
@@ -188,9 +192,19 @@ func (timeoutService) AnalyticsOptions(ctx context.Context, q service.AnalyticsO
 	return service.AnalyticsOptions{}, ctx.Err()
 }
 
+func (timeoutService) SessionsOptions(ctx context.Context, q service.SessionsOptionsQuery) (service.SessionsOptions, error) {
+	<-ctx.Done()
+	return service.SessionsOptions{}, ctx.Err()
+}
+
 func (wrappedTimeoutService) AnalyticsOptions(ctx context.Context, q service.AnalyticsOptionsQuery) (service.AnalyticsOptions, error) {
 	<-ctx.Done()
 	return service.AnalyticsOptions{}, fmt.Errorf("wrapped: %w", ctx.Err())
+}
+
+func (wrappedTimeoutService) SessionsOptions(ctx context.Context, q service.SessionsOptionsQuery) (service.SessionsOptions, error) {
+	<-ctx.Done()
+	return service.SessionsOptions{}, fmt.Errorf("wrapped: %w", ctx.Err())
 }
 
 func TestSessionsEndpointClampsOversizedOffset(t *testing.T) {
