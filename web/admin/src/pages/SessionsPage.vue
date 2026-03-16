@@ -1,13 +1,24 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
-import { fetchSessions, type SessionItem } from '../api/client'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { fetchSessions, fetchSessionsOptions, type SessionItem, type SessionsOptions } from '../api/client'
 import { formatBytes } from '../utils/format'
 
 const ruleID = ref('')
 const items = ref<SessionItem[]>([])
+const options = ref<SessionsOptions>({ rules: [] })
 const error = ref('')
 const loading = ref(false)
+const optionsLoading = ref(false)
 let timer: number | null = null
+
+async function loadOptions() {
+  optionsLoading.value = true
+  try {
+    options.value = await fetchSessionsOptions({ window: '15m' })
+  } finally {
+    optionsLoading.value = false
+  }
+}
 
 async function load() {
   try {
@@ -26,7 +37,12 @@ async function load() {
   }
 }
 
+watch(ruleID, () => {
+  void load()
+})
+
 onMounted(async () => {
+  await loadOptions()
   await load()
   timer = window.setInterval(() => {
     void load()
@@ -45,12 +61,16 @@ onUnmounted(() => {
       <div class="filters">
         <label>
           Rule
-          <input v-model="ruleID" placeholder="可选" @change="load" />
+          <select v-model="ruleID" :disabled="optionsLoading">
+            <option value="">全部</option>
+            <option v-for="item in options.rules" :key="item" :value="item">{{ item }}</option>
+          </select>
         </label>
       </div>
     </div>
 
     <p class="meta">固定窗口：5m · 每 5 秒自动刷新</p>
+    <p v-if="optionsLoading" class="meta">选项加载中...</p>
     <p v-if="loading" class="meta">加载中...</p>
     <p v-if="error" class="error">{{ error }}</p>
 
@@ -64,6 +84,7 @@ onUnmounted(() => {
           <th>状态</th>
           <th>总字节</th>
           <th>地域</th>
+          <th>拦截原因</th>
         </tr>
       </thead>
       <tbody>
@@ -75,6 +96,7 @@ onUnmounted(() => {
           <td>{{ item.status }}</td>
           <td>{{ formatBytes(item.total_bytes) }}</td>
           <td>{{ item.province }}{{ item.city }}</td>
+          <td>{{ item.blocked_reason || '-' }}</td>
         </tr>
       </tbody>
     </table>

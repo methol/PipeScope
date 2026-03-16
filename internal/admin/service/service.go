@@ -30,13 +30,21 @@ func (s *Service) ChinaMap(ctx context.Context, q MapQuery) ([]MapPoint, error) 
 		metricExpr = "COALESCE(SUM(total_bytes), 0)"
 	}
 
+	limit := q.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 SELECT COALESCE(NULLIF(adcode, ''), 'unknown') AS adcode, province, city, MAX(lat) AS lat, MAX(lng) AS lng, `+metricExpr+` AS v
 FROM conn_events
 WHERE start_ts >= ?
+  AND (? = '' OR rule_id = ?)
+  AND (? = '' OR status = ?)
 GROUP BY adcode, province, city
 ORDER BY v DESC
-`, s.windowStartMS(q.Window))
+LIMIT ?
+`, s.windowStartMS(q.Window), q.RuleID, q.RuleID, q.Status, q.Status, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +92,7 @@ func (s *Service) Sessions(ctx context.Context, q SessionsQuery) ([]SessionItem,
 	}
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, rule_id, src_addr, dst_addr, status, up_bytes, down_bytes, total_bytes,
-       start_ts, end_ts, duration_ms, province, city, adcode
+       start_ts, end_ts, duration_ms, province, city, adcode, blocked_reason
 FROM conn_events
 WHERE start_ts >= ?
   AND (? = '' OR rule_id = ?)
@@ -114,12 +122,39 @@ LIMIT ? OFFSET ?
 			&item.Province,
 			&item.City,
 			&item.Adcode,
+			&item.BlockedReason,
 		); err != nil {
 			return nil, err
 		}
 		out = append(out, item)
 	}
 	return out, rows.Err()
+}
+
+func (s *Service) SessionsOptions(ctx context.Context, q SessionsOptionsQuery) (SessionsOptions, error) {
+	result := SessionsOptions{
+		Rules: []string{},
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+SELECT DISTINCT COALESCE(NULLIF(rule_id, ''), 'unknown') AS rule
+FROM conn_events
+WHERE start_ts >= ?
+ORDER BY rule
+`, s.windowStartMS(q.Window))
+	if err != nil {
+		return result, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return result, err
+		}
+		result.Rules = append(result.Rules, v)
+	}
+	return result, rows.Err()
 }
 
 func (s *Service) Overview(ctx context.Context, window time.Duration) (Overview, error) {

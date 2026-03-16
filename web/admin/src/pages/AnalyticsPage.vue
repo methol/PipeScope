@@ -15,6 +15,7 @@ const ruleID = ref('')
 const province = ref('')
 const city = ref('')
 const status = ref('')
+const topN = ref('10')
 const loading = ref(false)
 const optionsLoading = ref(false)
 const error = ref('')
@@ -83,7 +84,7 @@ async function search() {
       province: province.value,
       city: city.value,
       status: status.value,
-      top_n: '10',
+      top_n: topN.value,
     })
   } catch (e) {
     analytics.value = {
@@ -149,6 +150,15 @@ void loadOptions()
           <select v-model="status">
             <option value="">全部</option>
             <option v-for="item in options.statuses" :key="item" :value="item">{{ item }}</option>
+          </select>
+        </label>
+        <label>
+          Top
+          <select v-model="topN">
+            <option value="10">10</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="1000">1000</option>
           </select>
         </label>
         <button class="btn" @click="search">检索</button>

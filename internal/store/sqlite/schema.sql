@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS conn_events (
     total_bytes INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'ok',
     err_msg TEXT NOT NULL DEFAULT '',
+    blocked_reason TEXT NOT NULL DEFAULT '',
     province TEXT NOT NULL DEFAULT '',
     city TEXT NOT NULL DEFAULT '',
     adcode TEXT NOT NULL DEFAULT '',
@@ -27,6 +28,8 @@ CREATE INDEX IF NOT EXISTS idx_conn_events_start_ts ON conn_events(start_ts);
 CREATE INDEX IF NOT EXISTS idx_conn_events_rule_id ON conn_events(rule_id);
 CREATE INDEX IF NOT EXISTS idx_conn_events_adcode ON conn_events(adcode);
 CREATE INDEX IF NOT EXISTS idx_conn_events_province_city ON conn_events(province, city);
+CREATE INDEX IF NOT EXISTS idx_conn_events_status ON conn_events(status);
+CREATE INDEX IF NOT EXISTS idx_conn_events_blocked_reason ON conn_events(blocked_reason);
 
 CREATE TABLE IF NOT EXISTS dim_adcode (
     adcode TEXT PRIMARY KEY,
@@ -45,4 +48,3 @@ CREATE TABLE IF NOT EXISTS app_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL DEFAULT ''
 );
-
