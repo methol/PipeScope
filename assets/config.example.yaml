@@ -1,3 +1,6 @@
+# PipeScope Configuration Example
+# ================================
+
 data:
   sqlite_path: "./data/pipescope.db"
   ip2region_cache_policy: "vindex"   # noCache|vindex|content
@@ -7,6 +10,62 @@ proxy_rules:
   - id: "demo-rule"
     listen: "0.0.0.0:10001"
     forward: "127.0.0.1:10002"
+    # Geo policy is optional. When not set, all traffic is allowed.
+    # geo_policy:
+    #   mode: "allow"                    # Required: "allow" | "deny"
+    #   require_allow_hit: true          # Only valid when mode is "allow"
+    #   rules:
+    #     - country: "CN"                # ISO 3166-1 alpha-2 (2 uppercase letters)
+
+  # Example: Allow only China traffic (block all foreign traffic)
+  # - id: "china-only"
+  #   listen: "0.0.0.0:10002"
+  #   forward: "127.0.0.1:10003"
+  #   geo_policy:
+  #     mode: "allow"
+  #     require_allow_hit: true         # Must match a rule to be allowed
+  #     rules:
+  #       - country: "CN"               # Only China
+
+  # Example: Block specific provinces (blacklist mode)
+  # - id: "block-provinces"
+  #   listen: "0.0.0.0:10003"
+  #   forward: "127.0.0.1:10004"
+  #   geo_policy:
+  #     mode: "deny"
+  #     rules:
+  #       - country: "CN"
+  #         provinces: ["福建", "广东"]  # Block these provinces
+  #       - country: "CN"
+  #         adcodes: ["440300"]          # Block Shenzhen by adcode
+
+  # Example: Whitelist specific cities by adcode (most precise)
+  # - id: "whitelist-cities"
+  #   listen: "0.0.0.0:10004"
+  #   forward: "127.0.0.1:10005"
+  #   geo_policy:
+  #     mode: "allow"
+  #     require_allow_hit: true
+  #     rules:
+  #       - country: "CN"
+  #         adcodes:
+  #           - "110000"                 # Beijing
+  #           - "310000"                 # Shanghai
+  #           - "440100"                 # Guangzhou
+
+  # Example: Allow multiple countries with province filter
+  # - id: "multi-country"
+  #   listen: "0.0.0.0:10005"
+  #   forward: "127.0.0.1:10006"
+  #   geo_policy:
+  #     mode: "allow"
+  #     require_allow_hit: true
+  #     rules:
+  #       - country: "CN"               # All China
+  #       - country: "US"
+  #         provinces: ["California"]   # Only California
+  #       - country: "JP"               # All Japan
+  #       - country: "SG"               # All Singapore
 
 writer:
   queue_size: 4096

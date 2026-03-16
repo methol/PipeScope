@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -27,9 +28,25 @@ type DataConfig struct {
 }
 
 type ProxyRule struct {
-	ID      string `yaml:"id"`
-	Listen  string `yaml:"listen"`
-	Forward string `yaml:"forward"`
+	ID        string     `yaml:"id"`
+	Listen    string     `yaml:"listen"`
+	Forward   string     `yaml:"forward"`
+	GeoPolicy *GeoPolicy `yaml:"geo_policy"`
+}
+
+// GeoPolicy defines geo-based traffic filtering policy
+type GeoPolicy struct {
+	Mode           string    `yaml:"mode"`            // "allow" | "deny"
+	RequireAllowHit bool     `yaml:"require_allow_hit"` // in allow mode, require explicit hit to pass
+	Rules          []GeoRule `yaml:"rules"`
+}
+
+// GeoRule defines a single geo filter rule
+type GeoRule struct {
+	Country   string   `yaml:"country"`   // ISO 3166-1 alpha-2 country code
+	Provinces []string `yaml:"provinces"` // province names (optional)
+	Cities    []string `yaml:"cities"`    // city names (optional)
+	Adcodes   []string `yaml:"adcodes"`   // administrative division codes (optional)
 }
 
 type WriterConfig struct {
@@ -158,8 +175,27 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("legacy external geo/ip config is no longer supported; use embedded data assets")
 	}
 	applyDefaults(&cfg)
+	normalizeGeoPolicy(&cfg)
+
+	// Validate configuration
+	if errs := cfg.Validate(); len(errs) > 0 {
+		return nil, errs
+	}
 
 	return &cfg, nil
+}
+
+// normalizeGeoPolicy normalizes geo policy config values
+func normalizeGeoPolicy(cfg *Config) {
+	for i := range cfg.ProxyRules {
+		if cfg.ProxyRules[i].GeoPolicy != nil {
+			policy := cfg.ProxyRules[i].GeoPolicy
+			policy.Mode = strings.ToLower(strings.TrimSpace(policy.Mode))
+			for j := range policy.Rules {
+				policy.Rules[j].Country = NormalizeCountryCode(policy.Rules[j].Country)
+			}
+		}
+	}
 }
 
 func applyDefaults(cfg *Config) {
