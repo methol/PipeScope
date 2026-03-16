@@ -77,6 +77,17 @@ func (s *Store) migrateLegacyConnEvents(ctx context.Context) error {
 			return fmt.Errorf("migrate conn_events add column %s: %w", col.name, err)
 		}
 	}
+	if _, err := s.db.ExecContext(ctx, `
+UPDATE conn_events
+SET created_at = CASE
+	WHEN end_ts > 0 THEN end_ts
+	WHEN start_ts > 0 THEN start_ts
+	ELSE created_at
+END
+WHERE created_at = 0
+`); err != nil {
+		return fmt.Errorf("backfill conn_events created_at: %w", err)
+	}
 	return nil
 }
 
@@ -114,4 +125,3 @@ func (s *Store) hasColumn(ctx context.Context, table, column string) (bool, erro
 	}
 	return false, nil
 }
-

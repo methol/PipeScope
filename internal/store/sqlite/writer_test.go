@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 	"time"
@@ -61,6 +62,48 @@ func TestWriterBatchInsert(t *testing.T) {
 	}
 	if got != total {
 		t.Fatalf("row count mismatch: got=%d want=%d", got, total)
+	}
+}
+
+func TestWriterSetsCreatedAtConsistentlyAcrossFreshAndMigratedSchemas(t *testing.T) {
+	evt := session.Event{
+		RuleID:     "r-created-at",
+		ListenPort: 10001,
+		SrcAddr:    "1.1.1.1:1000",
+		DstAddr:    "2.2.2.2:80",
+		StartTS:    111,
+		EndTS:      222,
+		Status:     "ok",
+	}
+
+	freshDB := openTempDB(t)
+	freshStore := New(freshDB)
+	if err := freshStore.InitSchema(context.Background()); err != nil {
+		t.Fatalf("init fresh schema: %v", err)
+	}
+	freshCreatedAt := insertEventAndReadCreatedAt(t, freshDB, evt)
+
+	migratedDB := openTempDB(t)
+	if _, err := migratedDB.Exec(`
+CREATE TABLE conn_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'ok'
+);
+`); err != nil {
+		t.Fatalf("create legacy conn_events: %v", err)
+	}
+	migratedStore := New(migratedDB)
+	if err := migratedStore.InitSchema(context.Background()); err != nil {
+		t.Fatalf("init migrated schema: %v", err)
+	}
+	migratedCreatedAt := insertEventAndReadCreatedAt(t, migratedDB, evt)
+
+	if freshCreatedAt != evt.EndTS {
+		t.Fatalf("fresh schema created_at=%d want=%d", freshCreatedAt, evt.EndTS)
+	}
+	if migratedCreatedAt != evt.EndTS {
+		t.Fatalf("migrated schema created_at=%d want=%d", migratedCreatedAt, evt.EndTS)
 	}
 }
 
@@ -375,4 +418,18 @@ LIMIT 1
 	if adcode != "110000" {
 		t.Fatalf("expected adcode=110000, got %s", adcode)
 	}
+}
+
+func insertEventAndReadCreatedAt(t *testing.T, db *sql.DB, evt session.Event) int64 {
+	t.Helper()
+	w := NewWriter(db, nil, 1, time.Second)
+	if err := w.insertBatch(context.Background(), []session.Event{evt}); err != nil {
+		t.Fatalf("insert batch: %v", err)
+	}
+
+	var createdAt int64
+	if err := db.QueryRow(`SELECT created_at FROM conn_events WHERE rule_id = ? LIMIT 1`, evt.RuleID).Scan(&createdAt); err != nil {
+		t.Fatalf("query created_at: %v", err)
+	}
+	return createdAt
 }
