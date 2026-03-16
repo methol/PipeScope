@@ -1,6 +1,8 @@
 package geo
 
 import (
+	"strings"
+
 	"pipescope/internal/geo/areacity"
 	"pipescope/internal/geo/ip2region"
 	"pipescope/internal/geo/normalize"
@@ -47,7 +49,7 @@ func LookupFunc(region *ip2region.Searcher, matcher *areacity.Matcher) GeoLookup
 		}
 
 		info := GeoInfo{
-			Country:  regionResult.Country,
+			Country:  resolveCountryCode(regionResult),
 			Province: province,
 			City:     city,
 		}
@@ -62,4 +64,11 @@ func LookupFunc(region *ip2region.Searcher, matcher *areacity.Matcher) GeoLookup
 
 		return info, nil
 	}
+}
+
+func resolveCountryCode(region ip2region.Region) string {
+	if code := strings.ToUpper(strings.TrimSpace(region.Code)); code != "" {
+		return code
+	}
+	return strings.ToUpper(strings.TrimSpace(region.Country))
 }
