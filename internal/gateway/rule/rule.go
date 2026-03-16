@@ -9,10 +9,11 @@ type Rule struct {
 }
 
 // GeoPolicy defines geo-based traffic filtering policy
+// Matching order: deny rules first, then allow rules, finally fallback to require_allow_hit
 type GeoPolicy struct {
-	Mode            string    `yaml:"mode"`             // "allow" | "deny"
-	RequireAllowHit bool      `yaml:"require_allow_hit"` // in allow mode, require explicit hit to pass
-	Rules           []GeoRule `yaml:"rules"`
+	RequireAllowHit bool      `yaml:"require_allow_hit"` // when no rules match: true=deny, false=allow
+	Allow           []GeoRule `yaml:"allow"`             // allow rules (checked after deny)
+	Deny            []GeoRule `yaml:"deny"`              // deny rules (checked first)
 }
 
 // GeoRule defines a single geo filter rule

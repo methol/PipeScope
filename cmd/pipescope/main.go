@@ -220,12 +220,20 @@ func convertRules(src []config.ProxyRule) []rule.Rule {
 		var geoPolicy *rule.GeoPolicy
 		if r.GeoPolicy != nil {
 			geoPolicy = &rule.GeoPolicy{
-				Mode:            r.GeoPolicy.Mode,
 				RequireAllowHit: r.GeoPolicy.RequireAllowHit,
-				Rules:           make([]rule.GeoRule, len(r.GeoPolicy.Rules)),
+				Allow:           make([]rule.GeoRule, len(r.GeoPolicy.Allow)),
+				Deny:            make([]rule.GeoRule, len(r.GeoPolicy.Deny)),
 			}
-			for i, gr := range r.GeoPolicy.Rules {
-				geoPolicy.Rules[i] = rule.GeoRule{
+			for i, gr := range r.GeoPolicy.Allow {
+				geoPolicy.Allow[i] = rule.GeoRule{
+					Country:   gr.Country,
+					Provinces: gr.Provinces,
+					Cities:    gr.Cities,
+					Adcodes:   gr.Adcodes,
+				}
+			}
+			for i, gr := range r.GeoPolicy.Deny {
+				geoPolicy.Deny[i] = rule.GeoRule{
 					Country:   gr.Country,
 					Provinces: gr.Provinces,
 					Cities:    gr.Cities,

@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -35,10 +34,11 @@ type ProxyRule struct {
 }
 
 // GeoPolicy defines geo-based traffic filtering policy
+// Matching order: deny rules first, then allow rules, finally fallback to require_allow_hit
 type GeoPolicy struct {
-	Mode           string    `yaml:"mode"`            // "allow" | "deny"
-	RequireAllowHit bool     `yaml:"require_allow_hit"` // in allow mode, require explicit hit to pass
-	Rules          []GeoRule `yaml:"rules"`
+	RequireAllowHit bool      `yaml:"require_allow_hit"` // when no rules match: true=deny, false=allow
+	Allow           []GeoRule `yaml:"allow"`             // allow rules (checked after deny)
+	Deny            []GeoRule `yaml:"deny"`              // deny rules (checked first)
 }
 
 // GeoRule defines a single geo filter rule
@@ -190,9 +190,13 @@ func normalizeGeoPolicy(cfg *Config) {
 	for i := range cfg.ProxyRules {
 		if cfg.ProxyRules[i].GeoPolicy != nil {
 			policy := cfg.ProxyRules[i].GeoPolicy
-			policy.Mode = strings.ToLower(strings.TrimSpace(policy.Mode))
-			for j := range policy.Rules {
-				policy.Rules[j].Country = NormalizeCountryCode(policy.Rules[j].Country)
+			// Normalize allow rules
+			for j := range policy.Allow {
+				policy.Allow[j].Country = NormalizeCountryCode(policy.Allow[j].Country)
+			}
+			// Normalize deny rules
+			for j := range policy.Deny {
+				policy.Deny[j].Country = NormalizeCountryCode(policy.Deny[j].Country)
 			}
 		}
 	}

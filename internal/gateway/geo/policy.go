@@ -28,46 +28,44 @@ type CheckResult struct {
 }
 
 // Check evaluates the geo policy against the given geo info
+// Matching order: deny rules first, then allow rules, finally fallback to require_allow_hit
 // Returns whether the connection is allowed and the blocked reason if not
 func (m *Matcher) Check(info GeoInfo) CheckResult {
-	if m.policy == nil || len(m.policy.Rules) == 0 {
+	if m.policy == nil {
 		return CheckResult{Allowed: true}
 	}
 
-	hit := m.matchRule(info)
-
-	switch m.policy.Mode {
-	case "allow":
-		if hit {
-			return CheckResult{Allowed: true}
-		}
-		if m.policy.RequireAllowHit {
-			return CheckResult{
-				Allowed:       false,
-				BlockedReason: BlockedReasonNotInAllowlist,
-			}
-		}
-		return CheckResult{Allowed: true}
-
-	case "deny":
-		if hit {
+	// Step 1: Check deny rules - if any match, block immediately
+	if len(m.policy.Deny) > 0 {
+		if m.matchRules(m.policy.Deny, info) {
 			return CheckResult{
 				Allowed:       false,
 				BlockedReason: BlockedReasonDenied,
 			}
 		}
-		return CheckResult{Allowed: true}
-
-	default:
-		// Unknown mode, allow by default
-		return CheckResult{Allowed: true}
 	}
+
+	// Step 2: Check allow rules - if any match, allow
+	if len(m.policy.Allow) > 0 {
+		if m.matchRules(m.policy.Allow, info) {
+			return CheckResult{Allowed: true}
+		}
+	}
+
+	// Step 3: No rules matched, fallback to require_allow_hit
+	// If require_allow_hit is true, deny; otherwise allow
+	if m.policy.RequireAllowHit {
+		return CheckResult{
+			Allowed:       false,
+			BlockedReason: BlockedReasonNotInAllowlist,
+		}
+	}
+	return CheckResult{Allowed: true}
 }
 
-// matchRule checks if the geo info matches any rule in the policy
-// Priority: adcode > city+province > province > country
-func (m *Matcher) matchRule(info GeoInfo) bool {
-	for _, r := range m.policy.Rules {
+// matchRules checks if the geo info matches any rule in the list
+func (m *Matcher) matchRules(rules []rule.GeoRule, info GeoInfo) bool {
+	for _, r := range rules {
 		if m.matchSingleRule(r, info) {
 			return true
 		}

@@ -20,19 +20,30 @@ func TestMatcher_Check(t *testing.T) {
 			expected: CheckResult{Allowed: true},
 		},
 		{
-			name: "empty rules allows all",
+			name: "empty allow and deny with require_allow_hit false allows all",
 			policy: &rule.GeoPolicy{
-				Mode:  "allow",
-				Rules: []rule.GeoRule{},
+				RequireAllowHit: false,
+				Allow:           []rule.GeoRule{},
+				Deny:            []rule.GeoRule{},
 			},
 			info:     GeoInfo{Country: "US"},
 			expected: CheckResult{Allowed: true},
 		},
 		{
-			name: "allow mode - country match",
+			name: "empty allow and deny with require_allow_hit true denies all",
 			policy: &rule.GeoPolicy{
-				Mode: "allow",
-				Rules: []rule.GeoRule{
+				RequireAllowHit: true,
+				Allow:           []rule.GeoRule{},
+				Deny:            []rule.GeoRule{},
+			},
+			info:     GeoInfo{Country: "US"},
+			expected: CheckResult{Allowed: false, BlockedReason: BlockedReasonNotInAllowlist},
+		},
+		{
+			name: "allow rule - country match",
+			policy: &rule.GeoPolicy{
+				RequireAllowHit: true,
+				Allow: []rule.GeoRule{
 					{Country: "CN"},
 				},
 			},
@@ -40,22 +51,10 @@ func TestMatcher_Check(t *testing.T) {
 			expected: CheckResult{Allowed: true},
 		},
 		{
-			name: "allow mode - country mismatch without require hit",
+			name: "allow rule - country mismatch with require_allow_hit true",
 			policy: &rule.GeoPolicy{
-				Mode: "allow",
-				Rules: []rule.GeoRule{
-					{Country: "CN"},
-				},
-			},
-			info:     GeoInfo{Country: "US"},
-			expected: CheckResult{Allowed: true},
-		},
-		{
-			name: "allow mode - country mismatch with require hit",
-			policy: &rule.GeoPolicy{
-				Mode:            "allow",
 				RequireAllowHit: true,
-				Rules: []rule.GeoRule{
+				Allow: []rule.GeoRule{
 					{Country: "CN"},
 				},
 			},
@@ -63,21 +62,10 @@ func TestMatcher_Check(t *testing.T) {
 			expected: CheckResult{Allowed: false, BlockedReason: BlockedReasonNotInAllowlist},
 		},
 		{
-			name: "deny mode - country match blocks",
+			name: "allow rule - country mismatch with require_allow_hit false",
 			policy: &rule.GeoPolicy{
-				Mode: "deny",
-				Rules: []rule.GeoRule{
-					{Country: "CN"},
-				},
-			},
-			info:     GeoInfo{Country: "CN"},
-			expected: CheckResult{Allowed: false, BlockedReason: BlockedReasonDenied},
-		},
-		{
-			name: "deny mode - country mismatch allows",
-			policy: &rule.GeoPolicy{
-				Mode: "deny",
-				Rules: []rule.GeoRule{
+				RequireAllowHit: false,
+				Allow: []rule.GeoRule{
 					{Country: "CN"},
 				},
 			},
@@ -85,10 +73,30 @@ func TestMatcher_Check(t *testing.T) {
 			expected: CheckResult{Allowed: true},
 		},
 		{
-			name: "allow mode - province match",
+			name: "deny rule - country match blocks",
 			policy: &rule.GeoPolicy{
-				Mode: "allow",
-				Rules: []rule.GeoRule{
+				Deny: []rule.GeoRule{
+					{Country: "CN"},
+				},
+			},
+			info:     GeoInfo{Country: "CN"},
+			expected: CheckResult{Allowed: false, BlockedReason: BlockedReasonDenied},
+		},
+		{
+			name: "deny rule - country mismatch allows",
+			policy: &rule.GeoPolicy{
+				Deny: []rule.GeoRule{
+					{Country: "CN"},
+				},
+			},
+			info:     GeoInfo{Country: "US"},
+			expected: CheckResult{Allowed: true},
+		},
+		{
+			name: "allow rule - province match",
+			policy: &rule.GeoPolicy{
+				RequireAllowHit: true,
+				Allow: []rule.GeoRule{
 					{Country: "CN", Provinces: []string{"北京", "上海"}},
 				},
 			},
@@ -96,11 +104,10 @@ func TestMatcher_Check(t *testing.T) {
 			expected: CheckResult{Allowed: true},
 		},
 		{
-			name: "allow mode - province mismatch",
+			name: "allow rule - province mismatch",
 			policy: &rule.GeoPolicy{
-				Mode:            "allow",
 				RequireAllowHit: true,
-				Rules: []rule.GeoRule{
+				Allow: []rule.GeoRule{
 					{Country: "CN", Provinces: []string{"北京", "上海"}},
 				},
 			},
@@ -108,10 +115,10 @@ func TestMatcher_Check(t *testing.T) {
 			expected: CheckResult{Allowed: false, BlockedReason: BlockedReasonNotInAllowlist},
 		},
 		{
-			name: "allow mode - adcode match",
+			name: "allow rule - adcode match",
 			policy: &rule.GeoPolicy{
-				Mode: "allow",
-				Rules: []rule.GeoRule{
+				RequireAllowHit: true,
+				Allow: []rule.GeoRule{
 					{Country: "CN", Adcodes: []string{"110000", "310000"}},
 				},
 			},
@@ -119,44 +126,91 @@ func TestMatcher_Check(t *testing.T) {
 			expected: CheckResult{Allowed: true},
 		},
 		{
-			name: "allow mode - city match with province context",
+			name: "deny takes precedence over allow",
 			policy: &rule.GeoPolicy{
-				Mode: "allow",
-				Rules: []rule.GeoRule{
-					{Country: "CN", Provinces: []string{"北京"}, Cities: []string{"北京"}},
-				},
-			},
-			info:     GeoInfo{Country: "CN", Province: "北京", City: "北京"},
-			expected: CheckResult{Allowed: true},
-		},
-		{
-			name: "allow mode - city match without province context in rule",
-			policy: &rule.GeoPolicy{
-				Mode: "allow",
-				Rules: []rule.GeoRule{
-					{Country: "CN", Cities: []string{"北京"}},
-				},
-			},
-			info:     GeoInfo{Country: "CN", Province: "北京", City: "北京"},
-			expected: CheckResult{Allowed: true},
-		},
-		{
-			name: "allow mode - city mismatch with province in rule",
-			policy: &rule.GeoPolicy{
-				Mode:            "allow",
 				RequireAllowHit: true,
-				Rules: []rule.GeoRule{
-					{Country: "CN", Provinces: []string{"北京"}, Cities: []string{"北京"}},
+				Allow: []rule.GeoRule{
+					{Country: "CN"},
+				},
+				Deny: []rule.GeoRule{
+					{Country: "CN", Provinces: []string{"福建"}},
 				},
 			},
-			info:     GeoInfo{Country: "CN", Province: "上海", City: "上海"},
-			expected: CheckResult{Allowed: false, BlockedReason: BlockedReasonNotInAllowlist},
+			info:     GeoInfo{Country: "CN", Province: "福建"},
+			expected: CheckResult{Allowed: false, BlockedReason: BlockedReasonDenied},
 		},
 		{
-			name: "case insensitive country match",
+			name: "allow CN but deny province - other provinces allowed",
 			policy: &rule.GeoPolicy{
-				Mode: "allow",
-				Rules: []rule.GeoRule{
+				RequireAllowHit: true,
+				Allow: []rule.GeoRule{
+					{Country: "CN"},
+				},
+				Deny: []rule.GeoRule{
+					{Country: "CN", Provinces: []string{"福建"}},
+				},
+			},
+			info:     GeoInfo{Country: "CN", Province: "广东"},
+			expected: CheckResult{Allowed: true},
+		},
+		{
+			name: "deny specific province but allow country - CN matched by allow",
+			policy: &rule.GeoPolicy{
+				RequireAllowHit: true,
+				Allow: []rule.GeoRule{
+					{Country: "CN"},
+				},
+				Deny: []rule.GeoRule{
+					{Country: "CN", Provinces: []string{"福建"}},
+				},
+			},
+			info:     GeoInfo{Country: "CN", Province: "北京"},
+			expected: CheckResult{Allowed: true},
+		},
+		{
+			name: "deny all CN - CN blocked even if in allow",
+			policy: &rule.GeoPolicy{
+				Allow: []rule.GeoRule{
+					{Country: "CN"},
+				},
+				Deny: []rule.GeoRule{
+					{Country: "CN"},
+				},
+			},
+			info:     GeoInfo{Country: "CN"},
+			expected: CheckResult{Allowed: false, BlockedReason: BlockedReasonDenied},
+		},
+		{
+			name: "deny province in CN - block that province",
+			policy: &rule.GeoPolicy{
+				Allow: []rule.GeoRule{
+					{Country: "CN"},
+				},
+				Deny: []rule.GeoRule{
+					{Country: "CN", Provinces: []string{"福建", "广东"}},
+				},
+			},
+			info:     GeoInfo{Country: "CN", Province: "福建"},
+			expected: CheckResult{Allowed: false, BlockedReason: BlockedReasonDenied},
+		},
+		{
+			name: "deny adcode in CN - block that city",
+			policy: &rule.GeoPolicy{
+				Allow: []rule.GeoRule{
+					{Country: "CN"},
+				},
+				Deny: []rule.GeoRule{
+					{Country: "CN", Adcodes: []string{"440300"}}, // 深圳
+				},
+			},
+			info:     GeoInfo{Country: "CN", Adcode: "440300"},
+			expected: CheckResult{Allowed: false, BlockedReason: BlockedReasonDenied},
+		},
+		{
+			name: "case insensitive country match in allow",
+			policy: &rule.GeoPolicy{
+				RequireAllowHit: true,
+				Allow: []rule.GeoRule{
 					{Country: "cn"},
 				},
 			},
@@ -164,16 +218,84 @@ func TestMatcher_Check(t *testing.T) {
 			expected: CheckResult{Allowed: true},
 		},
 		{
-			name: "deny multiple countries",
+			name: "case insensitive country match in deny",
 			policy: &rule.GeoPolicy{
-				Mode: "deny",
-				Rules: []rule.GeoRule{
-					{Country: "CN"},
-					{Country: "RU"},
+				Deny: []rule.GeoRule{
+					{Country: "cn"},
 				},
 			},
-			info:     GeoInfo{Country: "RU"},
+			info:     GeoInfo{Country: "CN"},
 			expected: CheckResult{Allowed: false, BlockedReason: BlockedReasonDenied},
+		},
+		{
+			name: "multiple deny rules",
+			policy: &rule.GeoPolicy{
+				Allow: []rule.GeoRule{
+					{Country: "CN"},
+				},
+				Deny: []rule.GeoRule{
+					{Country: "CN", Provinces: []string{"福建"}},
+					{Country: "CN", Adcodes: []string{"440300"}},
+				},
+			},
+			info:     GeoInfo{Country: "CN", Adcode: "440300"},
+			expected: CheckResult{Allowed: false, BlockedReason: BlockedReasonDenied},
+		},
+		{
+			name: "multiple allow rules",
+			policy: &rule.GeoPolicy{
+				RequireAllowHit: true,
+				Allow: []rule.GeoRule{
+					{Country: "CN"},
+					{Country: "US"},
+				},
+			},
+			info:     GeoInfo{Country: "US"},
+			expected: CheckResult{Allowed: true},
+		},
+		{
+			name: "non-CN country denied when only CN allowed with require_allow_hit",
+			policy: &rule.GeoPolicy{
+				RequireAllowHit: true,
+				Allow: []rule.GeoRule{
+					{Country: "CN"},
+				},
+			},
+			info:     GeoInfo{Country: "JP"},
+			expected: CheckResult{Allowed: false, BlockedReason: BlockedReasonNotInAllowlist},
+		},
+		{
+			name: "allow rule - city match with province context",
+			policy: &rule.GeoPolicy{
+				RequireAllowHit: true,
+				Allow: []rule.GeoRule{
+					{Country: "CN", Provinces: []string{"北京"}, Cities: []string{"北京"}},
+				},
+			},
+			info:     GeoInfo{Country: "CN", Province: "北京", City: "北京"},
+			expected: CheckResult{Allowed: true},
+		},
+		{
+			name: "allow rule - city match without province context in rule",
+			policy: &rule.GeoPolicy{
+				RequireAllowHit: true,
+				Allow: []rule.GeoRule{
+					{Country: "CN", Cities: []string{"北京"}},
+				},
+			},
+			info:     GeoInfo{Country: "CN", Province: "北京", City: "北京"},
+			expected: CheckResult{Allowed: true},
+		},
+		{
+			name: "allow rule - city mismatch with province in rule",
+			policy: &rule.GeoPolicy{
+				RequireAllowHit: true,
+				Allow: []rule.GeoRule{
+					{Country: "CN", Provinces: []string{"北京"}, Cities: []string{"北京"}},
+				},
+			},
+			info:     GeoInfo{Country: "CN", Province: "上海", City: "上海"},
+			expected: CheckResult{Allowed: false, BlockedReason: BlockedReasonNotInAllowlist},
 		},
 	}
 
@@ -192,11 +314,43 @@ func TestMatcher_Check(t *testing.T) {
 }
 
 func TestMatcher_TypicalScenarios(t *testing.T) {
-	t.Run("block foreign traffic", func(t *testing.T) {
+	t.Run("allow CN but deny specific provinces", func(t *testing.T) {
 		policy := &rule.GeoPolicy{
-			Mode:            "allow",
 			RequireAllowHit: true,
-			Rules: []rule.GeoRule{
+			Allow: []rule.GeoRule{
+				{Country: "CN"},
+			},
+			Deny: []rule.GeoRule{
+				{Country: "CN", Provinces: []string{"福建", "广东"}},
+			},
+		}
+		m := NewMatcher(policy)
+
+		// CN 福建应该被拒绝（命中 deny）
+		if r := m.Check(GeoInfo{Country: "CN", Province: "福建"}); r.Allowed {
+			t.Error("CN 福建应该被拒绝")
+		}
+
+		// CN 广东应该被拒绝（命中 deny）
+		if r := m.Check(GeoInfo{Country: "CN", Province: "广东"}); r.Allowed {
+			t.Error("CN 广东应该被拒绝")
+		}
+
+		// CN 北京应该通过（命中 allow，未命中 deny）
+		if r := m.Check(GeoInfo{Country: "CN", Province: "北京"}); !r.Allowed {
+			t.Error("CN 北京应该被允许")
+		}
+
+		// US 应该被拒绝（未命中任何规则，require_allow_hit=true）
+		if r := m.Check(GeoInfo{Country: "US"}); r.Allowed {
+			t.Error("US 应该被拒绝")
+		}
+	})
+
+	t.Run("block foreign traffic - whitelist CN only", func(t *testing.T) {
+		policy := &rule.GeoPolicy{
+			RequireAllowHit: true,
+			Allow: []rule.GeoRule{
 				{Country: "CN"},
 			},
 		}
@@ -213,10 +367,9 @@ func TestMatcher_TypicalScenarios(t *testing.T) {
 		}
 	})
 
-	t.Run("block specific province", func(t *testing.T) {
+	t.Run("block specific province - blacklist mode", func(t *testing.T) {
 		policy := &rule.GeoPolicy{
-			Mode: "deny",
-			Rules: []rule.GeoRule{
+			Deny: []rule.GeoRule{
 				{Country: "CN", Provinces: []string{"某省"}},
 			},
 		}
@@ -235,9 +388,8 @@ func TestMatcher_TypicalScenarios(t *testing.T) {
 
 	t.Run("whitelist specific cities by adcode", func(t *testing.T) {
 		policy := &rule.GeoPolicy{
-			Mode:            "allow",
 			RequireAllowHit: true,
-			Rules: []rule.GeoRule{
+			Allow: []rule.GeoRule{
 				{Country: "CN", Adcodes: []string{"110000", "310000"}}, // 北京, 上海
 			},
 		}
@@ -256,6 +408,48 @@ func TestMatcher_TypicalScenarios(t *testing.T) {
 		// Other cities should be blocked
 		if r := m.Check(GeoInfo{Country: "CN", Adcode: "440100"}); r.Allowed {
 			t.Error("广州 should be blocked")
+		}
+	})
+
+	t.Run("deny takes precedence - allow CN but deny CN 福建 and 深圳", func(t *testing.T) {
+		policy := &rule.GeoPolicy{
+			RequireAllowHit: true,
+			Allow: []rule.GeoRule{
+				{Country: "CN"},
+			},
+			Deny: []rule.GeoRule{
+				{Country: "CN", Provinces: []string{"福建"}},
+				{Country: "CN", Adcodes: []string{"440300"}}, // 深圳
+			},
+		}
+		m := NewMatcher(policy)
+
+		// 福建省被拒绝
+		if r := m.Check(GeoInfo{Country: "CN", Province: "福建"}); r.Allowed {
+			t.Error("福建 should be blocked")
+		}
+		if r := m.Check(GeoInfo{Country: "CN", Province: "福建", City: "福州"}); r.Allowed {
+			t.Error("福州（福建） should be blocked")
+		}
+
+		// 深圳被拒绝（adcode 匹配）
+		if r := m.Check(GeoInfo{Country: "CN", Province: "广东", City: "深圳", Adcode: "440300"}); r.Allowed {
+			t.Error("深圳 should be blocked")
+		}
+
+		// 广东其他城市允许
+		if r := m.Check(GeoInfo{Country: "CN", Province: "广东", City: "广州", Adcode: "440100"}); !r.Allowed {
+			t.Error("广州 should be allowed")
+		}
+
+		// 北京允许
+		if r := m.Check(GeoInfo{Country: "CN", Province: "北京"}); !r.Allowed {
+			t.Error("北京 should be allowed")
+		}
+
+		// 国外拒绝
+		if r := m.Check(GeoInfo{Country: "US"}); r.Allowed {
+			t.Error("US should be blocked")
 		}
 	})
 }

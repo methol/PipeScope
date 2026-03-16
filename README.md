@@ -173,31 +173,47 @@ PipeScope 支持在 TCP 连接建立前进行地理策略检查，可用于：
 - 仅允许中国流量，拦截国外访问
 - 拦截特定省份或城市
 - 仅允许白名单城市访问
+- **允许中国但禁止特定省份/城市**（组合模式）
 
 ##### Geo Policy 配置字段
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `mode` | string | 是 | `allow`（白名单）或 `deny`（黑名单） |
-| `require_allow_hit` | bool | 否 | 仅 `allow` 模式有效。为 `true` 时，未命中任何规则则拒绝连接；为 `false` 时，未命中则放行（默认放行） |
-| `rules[].country` | string | 是 | ISO 3166-1 alpha-2 国家码（如 `CN`、`US`、`JP`），必须大写 |
-| `rules[].provinces` | []string | 否 | 省份名称列表，支持中文（如 `["北京", "广东"]`），会自动标准化（去"省"、"市"后缀） |
-| `rules[].cities` | []string | 否 | 城市名称列表（如 `["深圳", "广州"]`），需配合 `provinces` 使用以避免同名城市歧义 |
-| `rules[].adcodes` | []string | 否 | 6 位行政区划码列表（最精确，如 `["440300"]`），仅国内 IP 有效 |
+| `require_allow_hit` | bool | 否 | 当未匹配任何规则时的默认行为：`true`=拒绝，`false`=放行（默认） |
+| `allow` | []GeoRule | 否 | 允许规则列表（deny 规则后检查） |
+| `deny` | []GeoRule | 否 | 拒绝规则列表（优先检查） |
+| `GeoRule.country` | string | 是 | ISO 3166-1 alpha-2 国家码（如 `CN`、`US`、`JP`），必须大写 |
+| `GeoRule.provinces` | []string | 否 | 省份名称列表，支持中文（如 `["北京", "广东"]`），会自动标准化（去"省"、"市"后缀） |
+| `GeoRule.cities` | []string | 否 | 城市名称列表（如 `["深圳", "广州"]`），需配合 `provinces` 使用以避免同名城市歧义 |
+| `GeoRule.adcodes` | []string | 否 | 6 位行政区划码列表（最精确，如 `["440300"]`），仅国内 IP 有效 |
 
 ##### 匹配逻辑
 
-- **匹配优先级**：adcode > city+province > province > country
-- **规则内关系**：`provinces` 与 `cities` 是 AND 关系（需同时匹配）；`provinces`、`cities`、`adcodes` 之间是 OR 关系
-- **多规则匹配**：按配置顺序匹配，首条匹配生效
+**匹配顺序**：
+1. **deny 规则**：先检查，命中则立即拒绝
+2. **allow 规则**：再检查，命中则放行
+3. **默认行为**：无任何规则命中时，按 `require_allow_hit` 决定（`true`=拒绝，`false`=放行）
 
-##### 模式行为
+**规则内匹配优先级**：adcode > city+province > province > country
 
-| 模式 | `require_allow_hit` | 命中规则 | 未命中规则 |
-|------|---------------------|----------|------------|
-| `allow` | `false` | 放行 | 放行（默认放行） |
-| `allow` | `true` | 放行 | **拒绝**（白名单模式） |
-| `deny` | （忽略） | **拒绝** | 放行（黑名单模式） |
+**规则内关系**：`provinces` 与 `cities` 是 AND 关系（需同时匹配）；`provinces`、`cities`、`adcodes` 之间是 OR 关系
+
+**多规则匹配**：同类型规则（allow 或 deny）按配置顺序匹配，首条匹配生效
+
+##### 配置行为表
+
+| 有 allow 规则 | 有 deny 规则 | require_allow_hit | 命中 deny | 命中 allow | 都未命中 | 结果 |
+|--------------|-------------|-------------------|-----------|-----------|---------|------|
+| ✓ | ✓ | 任意 | ✓ | - | - | **拒绝** |
+| ✓ | ✓ | 任意 | ✗ | ✓ | - | **放行** |
+| ✓ | ✓ | true | ✗ | ✗ | ✓ | **拒绝** |
+| ✓ | ✓ | false | ✗ | ✗ | ✓ | **放行** |
+| ✓ | ✗ | true | - | ✓ | - | **放行** |
+| ✓ | ✗ | true | - | ✗ | ✓ | **拒绝** |
+| ✗ | ✓ | 任意 | ✓ | - | - | **拒绝** |
+| ✗ | ✓ | 任意 | ✗ | - | - | **放行** |
+| ✗ | ✗ | true | - | - | ✓ | **拒绝**（全部拒绝） |
+| ✗ | ✗ | false | - | - | ✓ | **放行**（全部放行） |
 
 ##### 典型配置示例
 
@@ -209,10 +225,10 @@ proxy_rules:
     listen: "0.0.0.0:10001"
     forward: "127.0.0.1:10002"
     geo_policy:
-      mode: "allow"
-      require_allow_hit: true    # 必须命中规则才放行
-      rules:
-        - country: "CN"          # 仅允许中国
+      require_allow_hit: true     # 未匹配规则则拒绝
+      allow:
+        - country: "CN"           # 仅允许中国
+      deny: []
 ```
 
 **示例 2：禁止特定省份（黑名单模式）**
@@ -223,15 +239,14 @@ proxy_rules:
     listen: "0.0.0.0:10002"
     forward: "127.0.0.1:10003"
     geo_policy:
-      mode: "deny"
-      rules:
+      require_allow_hit: false    # 未匹配规则则放行
+      allow: []
+      deny:
         - country: "CN"
           provinces: ["福建", "广东"]
         - country: "CN"
-          adcodes: ["440300"]    # 深圳（精确到行政区划码）
+          adcodes: ["440300"]     # 深圳（精确到行政区划码）
 ```
-
-> 注意：`deny` 模式下，未命中规则的流量会放行。如需"允许中国但禁止某省"，需使用两条规则组合或配置两个 proxy_rule。
 
 **示例 3：仅允许白名单城市（精确到行政区划码）**
 
@@ -241,15 +256,40 @@ proxy_rules:
     listen: "0.0.0.0:10003"
     forward: "127.0.0.1:10004"
     geo_policy:
-      mode: "allow"
-      require_allow_hit: true
-      rules:
+      require_allow_hit: true     # 未匹配规则则拒绝
+      allow:
         - country: "CN"
           adcodes:
-            - "110000"           # 北京
-            - "310000"           # 上海
-            - "440100"           # 广州
+            - "110000"            # 北京
+            - "310000"            # 上海
+            - "440100"            # 广州
+      deny: []
 ```
+
+**示例 4：允许中国但禁止特定省份/城市（组合模式）**
+
+```yaml
+proxy_rules:
+  - id: "china-except-some"
+    listen: "0.0.0.0:10004"
+    forward: "127.0.0.1:10005"
+    geo_policy:
+      require_allow_hit: true     # 必须命中 allow 规则
+      allow:
+        - country: "CN"           # 允许中国
+      deny:                       # 但排除这些
+        - country: "CN"
+          provinces: ["福建", "广东"]
+        - country: "CN"
+          adcodes: ["440300"]     # 深圳（广东省）
+```
+
+上述配置效果：
+- 福建省流量：命中 deny，**拒绝**
+- 广东省深圳：命中 deny，**拒绝**
+- 广东省其他城市：命中 allow，未命中 deny，**放行**
+- 中国其他省份：命中 allow，未命中 deny，**放行**
+- 国外流量：未命中任何规则，require_allow_hit=true，**拒绝**
 
 ##### 拦截记录与状态查询
 
@@ -281,8 +321,9 @@ SELECT blocked_reason, COUNT(*) FROM conn_events WHERE blocked_reason != '' GROU
 
 检查：
 - `geo_policy` 是否正确缩进在 `proxy_rules[*]` 下
-- `mode` 是否为 `allow` 且 `require_allow_hit: true`（白名单模式需显式设置）
+- `require_allow_hit` 是否设置正确：`true` 表示未匹配规则则拒绝
 - 国家码是否为大写（如 `CN` 而非 `cn`）
+- 是否有正确的 `allow` 规则
 
 **Q2: 部分国内 IP 被错误拦截？**
 
@@ -308,9 +349,23 @@ SELECT blocked_reason, COUNT(*) FROM conn_events WHERE blocked_reason != '' GROU
 
 **Q5: 规则顺序有影响吗？**
 
-有。多规则按配置顺序匹配，首条匹配生效。建议：
+有。同类型规则（allow 或 deny）按配置顺序匹配，首条匹配生效。建议：
 - 精确规则在前（如 adcode）
 - 宽泛规则在后（如仅 country）
+
+**Q6: 如何实现"允许中国但禁止某省"？**
+
+使用组合模式：
+```yaml
+geo_policy:
+  require_allow_hit: true
+  allow:
+    - country: "CN"
+  deny:
+    - country: "CN"
+      provinces: ["福建"]
+```
+deny 规则优先检查，福建流量会被拒绝；其他中国流量命中 allow 规则放行；国外流量未命中任何规则，require_allow_hit=true 则拒绝。
 
 ### 6. 排错 / FAQ
 

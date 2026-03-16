@@ -34,6 +34,7 @@ func (e ValidationErrors) Error() string {
 }
 
 // ValidModes are the allowed geo policy modes
+// Deprecated: no longer used, kept for reference
 var ValidModes = map[string]bool{
 	"allow": true,
 	"deny":  true,
@@ -100,28 +101,23 @@ func (r *ProxyRule) Validate() ValidationErrors {
 func (p *GeoPolicy) Validate() ValidationErrors {
 	var errs ValidationErrors
 
-	// Validate mode
-	if !ValidModes[p.Mode] {
-		errs = append(errs, ValidationError{
-			Field:   "mode",
-			Message: fmt.Sprintf("invalid mode %q, must be 'allow' or 'deny'", p.Mode),
-		})
-	}
-
-	// Validate require_allow_hit semantics
-	if p.RequireAllowHit && p.Mode != "allow" {
-		errs = append(errs, ValidationError{
-			Field:   "require_allow_hit",
-			Message: "require_allow_hit can only be true when mode is 'allow'",
-		})
-	}
-
-	// Validate rules
-	for i, rule := range p.Rules {
+	// Validate allow rules
+	for i, rule := range p.Allow {
 		ruleErrs := rule.Validate()
 		for _, err := range ruleErrs {
 			errs = append(errs, ValidationError{
-				Field:   fmt.Sprintf("rules[%d].%s", i, err.Field),
+				Field:   fmt.Sprintf("allow[%d].%s", i, err.Field),
+				Message: err.Message,
+			})
+		}
+	}
+
+	// Validate deny rules
+	for i, rule := range p.Deny {
+		ruleErrs := rule.Validate()
+		for _, err := range ruleErrs {
+			errs = append(errs, ValidationError{
+				Field:   fmt.Sprintf("deny[%d].%s", i, err.Field),
 				Message: err.Message,
 			})
 		}

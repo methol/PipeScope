@@ -13,9 +13,8 @@ func TestValidateCountryCode(t *testing.T) {
 		{"CN", true},
 		{"US", true},
 		{"GB", true},
-		{"JP", true},
-		{"cn", false}, // lowercase not allowed
-		{"Cn", false}, // mixed case not allowed
+		{"jp", false}, // lowercase not allowed
+		{"Jp", false}, // mixed case not allowed
 		{"USA", false}, // 3 letters
 		{"C", false},   // 1 letter
 		{"", false},    // empty
@@ -95,10 +94,10 @@ func TestGeoPolicyValidation(t *testing.T) {
 		errorField  string
 	}{
 		{
-			name: "valid allow policy",
+			name: "valid allow-only policy",
 			policy: GeoPolicy{
-				Mode: "allow",
-				Rules: []GeoRule{
+				RequireAllowHit: true,
+				Allow: []GeoRule{
 					{Country: "CN"},
 					{Country: "US", Provinces: []string{"California"}},
 				},
@@ -106,10 +105,22 @@ func TestGeoPolicyValidation(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "valid deny policy",
+			name: "valid deny-only policy",
 			policy: GeoPolicy{
-				Mode: "deny",
-				Rules: []GeoRule{
+				Deny: []GeoRule{
+					{Country: "CN", Provinces: []string{"福建"}},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid allow and deny combination",
+			policy: GeoPolicy{
+				RequireAllowHit: true,
+				Allow: []GeoRule{
+					{Country: "CN"},
+				},
+				Deny: []GeoRule{
 					{Country: "CN", Provinces: []string{"福建"}},
 				},
 			},
@@ -118,164 +129,132 @@ func TestGeoPolicyValidation(t *testing.T) {
 		{
 			name: "valid policy with adcodes",
 			policy: GeoPolicy{
-				Mode:            "allow",
 				RequireAllowHit: true,
-				Rules: []GeoRule{
+				Allow: []GeoRule{
 					{Country: "CN", Adcodes: []string{"110000", "310000"}},
 				},
 			},
 			expectError: false,
 		},
 		{
-			name: "invalid mode",
+			name: "empty policy is valid",
 			policy: GeoPolicy{
-				Mode: "invalid",
-				Rules: []GeoRule{
-					{Country: "CN"},
-				},
+				RequireAllowHit: false,
 			},
-			expectError: true,
-			errorField:  "mode",
+			expectError: false,
 		},
 		{
-			name: "empty mode",
+			name: "missing country in allow rule",
 			policy: GeoPolicy{
-				Mode: "",
-				Rules: []GeoRule{
-					{Country: "CN"},
-				},
-			},
-			expectError: true,
-			errorField:  "mode",
-		},
-		{
-			name: "require_allow_hit with deny mode",
-			policy: GeoPolicy{
-				Mode:            "deny",
-				RequireAllowHit: true,
-				Rules: []GeoRule{
-					{Country: "CN"},
-				},
-			},
-			expectError: true,
-			errorField:  "require_allow_hit",
-		},
-		{
-			name: "missing country in rule",
-			policy: GeoPolicy{
-				Mode: "allow",
-				Rules: []GeoRule{
+				Allow: []GeoRule{
 					{Provinces: []string{"北京"}},
 				},
 			},
 			expectError: true,
-			errorField:  "rules[0].country",
+			errorField:  "allow[0].country",
 		},
 		{
-			name: "invalid country code format",
+			name: "missing country in deny rule",
 			policy: GeoPolicy{
-				Mode: "allow",
-				Rules: []GeoRule{
+				Deny: []GeoRule{
+					{Provinces: []string{"福建"}},
+				},
+			},
+			expectError: true,
+			errorField:  "deny[0].country",
+		},
+		{
+			name: "invalid country code format in allow",
+			policy: GeoPolicy{
+				Allow: []GeoRule{
 					{Country: "china"}, // should be CN
 				},
 			},
 			expectError: true,
-			errorField:  "rules[0].country",
+			errorField:  "allow[0].country",
 		},
 		{
 			name: "lowercase country code should fail validation",
 			policy: GeoPolicy{
-				Mode: "allow",
-				Rules: []GeoRule{
+				Allow: []GeoRule{
 					{Country: "cn"}, // lowercase not valid ISO alpha-2
 				},
 			},
 			expectError: true,
-			errorField:  "rules[0].country",
+			errorField:  "allow[0].country",
 		},
 		{
-			name: "invalid adcode format",
+			name: "invalid adcode format in allow",
 			policy: GeoPolicy{
-				Mode: "allow",
-				Rules: []GeoRule{
+				Allow: []GeoRule{
 					{Country: "CN", Adcodes: []string{"11000"}}, // 5 digits
 				},
 			},
 			expectError: true,
-			errorField:  "rules[0].adcodes[0]",
+			errorField:  "allow[0].adcodes[0]",
 		},
 		{
-			name: "adcode with letters",
+			name: "invalid adcode format in deny",
 			policy: GeoPolicy{
-				Mode: "allow",
-				Rules: []GeoRule{
-					{Country: "CN", Adcodes: []string{"11000a"}},
+				Deny: []GeoRule{
+					{Country: "CN", Adcodes: []string{"11000a"}}, // has letter
 				},
 			},
 			expectError: true,
-			errorField:  "rules[0].adcodes[0]",
+			errorField:  "deny[0].adcodes[0]",
 		},
 		{
-			name: "empty province string",
+			name: "empty province string in allow",
 			policy: GeoPolicy{
-				Mode: "allow",
-				Rules: []GeoRule{
+				Allow: []GeoRule{
 					{Country: "CN", Provinces: []string{""}},
 				},
 			},
 			expectError: true,
-			errorField:  "rules[0].provinces[0]",
+			errorField:  "allow[0].provinces[0]",
 		},
 		{
-			name: "whitespace-only province",
+			name: "whitespace-only province in deny",
 			policy: GeoPolicy{
-				Mode: "allow",
-				Rules: []GeoRule{
+				Deny: []GeoRule{
 					{Country: "CN", Provinces: []string{"   "}},
 				},
 			},
 			expectError: true,
-			errorField:  "rules[0].provinces[0]",
+			errorField:  "deny[0].provinces[0]",
 		},
 		{
-			name: "empty city string",
+			name: "empty city string in allow",
 			policy: GeoPolicy{
-				Mode: "allow",
-				Rules: []GeoRule{
+				Allow: []GeoRule{
 					{Country: "CN", Cities: []string{""}},
 				},
 			},
 			expectError: true,
-			errorField:  "rules[0].cities[0]",
+			errorField:  "allow[0].cities[0]",
 		},
 		{
-			name: "empty rules list is valid",
+			name: "multiple allow rules with one invalid",
 			policy: GeoPolicy{
-				Mode:  "allow",
-				Rules: []GeoRule{},
-			},
-			expectError: false,
-		},
-		{
-			name: "nil rules is valid",
-			policy: GeoPolicy{
-				Mode:  "allow",
-				Rules: nil,
-			},
-			expectError: false,
-		},
-		{
-			name: "multiple rules with one invalid",
-			policy: GeoPolicy{
-				Mode: "allow",
-				Rules: []GeoRule{
+				Allow: []GeoRule{
 					{Country: "CN"},
 					{Country: "invalid"}, // invalid
 					{Country: "US"},
 				},
 			},
 			expectError: true,
-			errorField:  "rules[1].country",
+			errorField:  "allow[1].country",
+		},
+		{
+			name: "multiple deny rules with one invalid adcode",
+			policy: GeoPolicy{
+				Deny: []GeoRule{
+					{Country: "CN", Provinces: []string{"福建"}},
+					{Country: "CN", Adcodes: []string{"12345"}}, // invalid 5-digit
+				},
+			},
+			expectError: true,
+			errorField:  "deny[1].adcodes[0]",
 		},
 	}
 
@@ -328,8 +307,8 @@ func TestProxyRuleValidation(t *testing.T) {
 				Listen:  "0.0.0.0:8080",
 				Forward: "127.0.0.1:8081",
 				GeoPolicy: &GeoPolicy{
-					Mode: "allow",
-					Rules: []GeoRule{
+					RequireAllowHit: true,
+					Allow: []GeoRule{
 						{Country: "CN"},
 					},
 				},
@@ -364,20 +343,19 @@ func TestProxyRuleValidation(t *testing.T) {
 			errorFields: []string{"forward"},
 		},
 		{
-			name: "invalid geo policy in rule",
+			name: "invalid geo policy in rule - missing country in allow",
 			rule: ProxyRule{
 				ID:      "test",
 				Listen:  "0.0.0.0:8080",
 				Forward: "127.0.0.1:8081",
 				GeoPolicy: &GeoPolicy{
-					Mode: "invalid",
-					Rules: []GeoRule{
-						{Country: "CN"},
+					Allow: []GeoRule{
+						{Provinces: []string{"北京"}}, // missing country
 					},
 				},
 			},
 			expectError: true,
-			errorFields: []string{"mode"},
+			errorFields: []string{"allow[0].country"},
 		},
 	}
 
@@ -410,7 +388,7 @@ func TestProxyRuleValidation(t *testing.T) {
 }
 
 func TestConfigValidation(t *testing.T) {
-	t.Run("valid config with geo policy", func(t *testing.T) {
+	t.Run("valid config with allow and deny geo policy", func(t *testing.T) {
 		dir := t.TempDir()
 		path := dir + "/config.yaml"
 		content := []byte(`
@@ -421,14 +399,16 @@ proxy_rules:
     listen: "0.0.0.0:10001"
     forward: "127.0.0.1:10002"
     geo_policy:
-      mode: "allow"
       require_allow_hit: true
-      rules:
+      allow:
         - country: "CN"
         - country: "US"
           provinces: ["California"]
         - country: "CN"
           adcodes: ["110000", "310000"]
+      deny:
+        - country: "CN"
+          provinces: ["福建"]
 writer: {}
 timeouts: {}
 admin: {}
@@ -447,18 +427,24 @@ admin: {}
 		if cfg.ProxyRules[0].GeoPolicy == nil {
 			t.Fatal("expected geo policy to be set")
 		}
-		if cfg.ProxyRules[0].GeoPolicy.Mode != "allow" {
-			t.Errorf("expected mode 'allow', got %q", cfg.ProxyRules[0].GeoPolicy.Mode)
+		if cfg.ProxyRules[0].GeoPolicy.RequireAllowHit != true {
+			t.Errorf("expected RequireAllowHit=true")
+		}
+		if len(cfg.ProxyRules[0].GeoPolicy.Allow) != 3 {
+			t.Errorf("expected 3 allow rules, got %d", len(cfg.ProxyRules[0].GeoPolicy.Allow))
+		}
+		if len(cfg.ProxyRules[0].GeoPolicy.Deny) != 1 {
+			t.Errorf("expected 1 deny rule, got %d", len(cfg.ProxyRules[0].GeoPolicy.Deny))
 		}
 		// Check country codes are normalized
-		for _, rule := range cfg.ProxyRules[0].GeoPolicy.Rules {
+		for _, rule := range cfg.ProxyRules[0].GeoPolicy.Allow {
 			if rule.Country != "CN" && rule.Country != "US" {
 				t.Errorf("unexpected country code: %q", rule.Country)
 			}
 		}
 	})
 
-	t.Run("country code normalization", func(t *testing.T) {
+	t.Run("country code normalization in allow and deny", func(t *testing.T) {
 		dir := t.TempDir()
 		path := dir + "/config.yaml"
 		content := []byte(`
@@ -469,9 +455,9 @@ proxy_rules:
     listen: "0.0.0.0:10001"
     forward: "127.0.0.1:10002"
     geo_policy:
-      mode: "ALLOW"
-      rules:
+      allow:
         - country: "cn"
+      deny:
         - country: "us"
 writer: {}
 timeouts: {}
@@ -485,19 +471,20 @@ admin: {}
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		// Mode should be normalized to lowercase
-		if cfg.ProxyRules[0].GeoPolicy.Mode != "allow" {
-			t.Errorf("expected mode 'allow', got %q", cfg.ProxyRules[0].GeoPolicy.Mode)
-		}
 		// Country codes should be normalized to uppercase
-		for _, rule := range cfg.ProxyRules[0].GeoPolicy.Rules {
-			if rule.Country != "CN" && rule.Country != "US" {
-				t.Errorf("expected normalized country code, got %q", rule.Country)
+		for _, rule := range cfg.ProxyRules[0].GeoPolicy.Allow {
+			if rule.Country != "CN" {
+				t.Errorf("expected normalized country code CN, got %q", rule.Country)
+			}
+		}
+		for _, rule := range cfg.ProxyRules[0].GeoPolicy.Deny {
+			if rule.Country != "US" {
+				t.Errorf("expected normalized country code US, got %q", rule.Country)
 			}
 		}
 	})
 
-	t.Run("invalid mode rejected", func(t *testing.T) {
+	t.Run("invalid country code rejected in allow", func(t *testing.T) {
 		dir := t.TempDir()
 		path := dir + "/config.yaml"
 		content := []byte(`
@@ -508,9 +495,8 @@ proxy_rules:
     listen: "0.0.0.0:10001"
     forward: "127.0.0.1:10002"
     geo_policy:
-      mode: "whitelist"
-      rules:
-        - country: "CN"
+      allow:
+        - country: "CHINA"
 writer: {}
 timeouts: {}
 admin: {}
@@ -521,11 +507,11 @@ admin: {}
 
 		_, err := Load(path)
 		if err == nil {
-			t.Fatal("expected error for invalid mode")
+			t.Fatal("expected error for invalid country code")
 		}
 	})
 
-	t.Run("invalid country code rejected", func(t *testing.T) {
+	t.Run("invalid country code rejected in deny", func(t *testing.T) {
 		dir := t.TempDir()
 		path := dir + "/config.yaml"
 		content := []byte(`
@@ -536,9 +522,8 @@ proxy_rules:
     listen: "0.0.0.0:10001"
     forward: "127.0.0.1:10002"
     geo_policy:
-      mode: "allow"
-      rules:
-        - country: "CHINA"
+      deny:
+        - country: "invalid"
 writer: {}
 timeouts: {}
 admin: {}
@@ -564,8 +549,7 @@ proxy_rules:
     listen: "0.0.0.0:10001"
     forward: "127.0.0.1:10002"
     geo_policy:
-      mode: "allow"
-      rules:
+      allow:
         - country: "CN"
           adcodes: ["11000"]
 writer: {}
@@ -582,7 +566,7 @@ admin: {}
 		}
 	})
 
-	t.Run("require_allow_hit with deny mode rejected", func(t *testing.T) {
+	t.Run("empty geo policy is valid", func(t *testing.T) {
 		dir := t.TempDir()
 		path := dir + "/config.yaml"
 		content := []byte(`
@@ -593,36 +577,7 @@ proxy_rules:
     listen: "0.0.0.0:10001"
     forward: "127.0.0.1:10002"
     geo_policy:
-      mode: "deny"
-      require_allow_hit: true
-      rules:
-        - country: "CN"
-writer: {}
-timeouts: {}
-admin: {}
-`)
-		if err := os.WriteFile(path, content, 0o644); err != nil {
-			t.Fatalf("write config: %v", err)
-		}
-
-		_, err := Load(path)
-		if err == nil {
-			t.Fatal("expected error for require_allow_hit with deny mode")
-		}
-	})
-
-	t.Run("empty geo policy rules is valid", func(t *testing.T) {
-		dir := t.TempDir()
-		path := dir + "/config.yaml"
-		content := []byte(`
-data:
-  sqlite_path: ./data/test.db
-proxy_rules:
-  - id: "test"
-    listen: "0.0.0.0:10001"
-    forward: "127.0.0.1:10002"
-    geo_policy:
-      mode: "allow"
+      require_allow_hit: false
 writer: {}
 timeouts: {}
 admin: {}
@@ -635,12 +590,12 @@ admin: {}
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if cfg.ProxyRules[0].GeoPolicy.Mode != "allow" {
-			t.Errorf("expected mode 'allow', got %q", cfg.ProxyRules[0].GeoPolicy.Mode)
+		if cfg.ProxyRules[0].GeoPolicy.RequireAllowHit != false {
+			t.Errorf("expected RequireAllowHit=false")
 		}
 	})
 
-	t.Run("missing country in rule rejected", func(t *testing.T) {
+	t.Run("missing country in allow rule rejected", func(t *testing.T) {
 		dir := t.TempDir()
 		path := dir + "/config.yaml"
 		content := []byte(`
@@ -651,8 +606,7 @@ proxy_rules:
     listen: "0.0.0.0:10001"
     forward: "127.0.0.1:10002"
     geo_policy:
-      mode: "allow"
-      rules:
+      allow:
         - provinces: ["北京"]
 writer: {}
 timeouts: {}
@@ -667,14 +621,41 @@ admin: {}
 			t.Fatal("expected error for missing country in rule")
 		}
 	})
+
+	t.Run("missing country in deny rule rejected", func(t *testing.T) {
+		dir := t.TempDir()
+		path := dir + "/config.yaml"
+		content := []byte(`
+data:
+  sqlite_path: ./data/test.db
+proxy_rules:
+  - id: "test"
+    listen: "0.0.0.0:10001"
+    forward: "127.0.0.1:10002"
+    geo_policy:
+      deny:
+        - provinces: ["福建"]
+writer: {}
+timeouts: {}
+admin: {}
+`)
+		if err := os.WriteFile(path, content, 0o644); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+
+		_, err := Load(path)
+		if err == nil {
+			t.Fatal("expected error for missing country in deny rule")
+		}
+	})
 }
 
 func TestValidationErrorsFormatting(t *testing.T) {
 	t.Run("single error", func(t *testing.T) {
 		errs := ValidationErrors{
-			{Field: "mode", Message: "invalid mode"},
+			{Field: "allow[0].country", Message: "country is required"},
 		}
-		expected := "mode: invalid mode"
+		expected := "allow[0].country: country is required"
 		if errs.Error() != expected {
 			t.Errorf("Error() = %q, want %q", errs.Error(), expected)
 		}
@@ -682,10 +663,10 @@ func TestValidationErrorsFormatting(t *testing.T) {
 
 	t.Run("multiple errors", func(t *testing.T) {
 		errs := ValidationErrors{
-			{Field: "mode", Message: "invalid mode"},
-			{Field: "country", Message: "invalid country code"},
+			{Field: "allow[0].country", Message: "invalid country code"},
+			{Field: "deny[0].country", Message: "invalid country code"},
 		}
-		expected := "mode: invalid mode; country: invalid country code"
+		expected := "allow[0].country: invalid country code; deny[0].country: invalid country code"
 		if errs.Error() != expected {
 			t.Errorf("Error() = %q, want %q", errs.Error(), expected)
 		}

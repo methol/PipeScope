@@ -13,60 +13,74 @@ proxy_rules:
     # Geo policy is optional. When not set, all traffic is allowed.
     # See README.md "场景四：Geo 前置拦截" for detailed usage.
     # geo_policy:
-    #   mode: "allow"                    # Required: "allow" (whitelist) | "deny" (blacklist)
-    #   require_allow_hit: true          # Only for "allow" mode. If true, connections not matching any rule are blocked.
-    #   rules:
-    #     - country: "CN"                # ISO 3166-1 alpha-2 country code (uppercase, e.g. CN, US, JP)
+    #   require_allow_hit: false          # When no rules match: true=deny, false=allow
+    #   allow: []                          # Allow rules (checked after deny)
+    #   deny: []                           # Deny rules (checked first)
 
   # Example: Allow only China traffic (block all foreign traffic)
   # - id: "china-only"
   #   listen: "0.0.0.0:10002"
   #   forward: "127.0.0.1:10003"
   #   geo_policy:
-  #     mode: "allow"
-  #     require_allow_hit: true         # Must match a rule to be allowed
-  #     rules:
-  #       - country: "CN"               # Only China
+  #     require_allow_hit: true           # Must match an allow rule to pass
+  #     allow:
+  #       - country: "CN"                 # Only China allowed
+  #     deny: []                          # No specific deny rules
 
   # Example: Block specific provinces (blacklist mode)
   # - id: "block-provinces"
   #   listen: "0.0.0.0:10003"
   #   forward: "127.0.0.1:10004"
   #   geo_policy:
-  #     mode: "deny"
-  #     rules:
+  #     require_allow_hit: false          # Allow by default when no rules match
+  #     allow: []                          # No allow rules
+  #     deny:                              # Block these provinces
   #       - country: "CN"
-  #         provinces: ["福建", "广东"]  # Block these provinces
+  #         provinces: ["福建", "广东"]
   #       - country: "CN"
-  #         adcodes: ["440300"]          # Block Shenzhen by adcode
+  #         adcodes: ["440300"]           # Block Shenzhen by adcode
 
   # Example: Whitelist specific cities by adcode (most precise)
   # - id: "whitelist-cities"
   #   listen: "0.0.0.0:10004"
   #   forward: "127.0.0.1:10005"
   #   geo_policy:
-  #     mode: "allow"
-  #     require_allow_hit: true
-  #     rules:
+  #     require_allow_hit: true           # Must match allow rule to pass
+  #     allow:
   #       - country: "CN"
   #         adcodes:
-  #           - "110000"                 # Beijing
-  #           - "310000"                 # Shanghai
-  #           - "440100"                 # Guangzhou
+  #           - "110000"                   # Beijing
+  #           - "310000"                   # Shanghai
+  #           - "440100"                   # Guangzhou
+  #     deny: []
 
-  # Example: Allow multiple countries with province filter
-  # - id: "multi-country"
+  # Example: Allow China but block specific provinces/cities (combination mode)
+  # - id: "china-except-some"
   #   listen: "0.0.0.0:10005"
   #   forward: "127.0.0.1:10006"
   #   geo_policy:
-  #     mode: "allow"
+  #     require_allow_hit: true           # Must match allow rule
+  #     allow:
+  #       - country: "CN"                 # Allow all China
+  #     deny:                              # But block these
+  #       - country: "CN"
+  #         provinces: ["福建", "广东"]   # Block these provinces
+  #       - country: "CN"
+  #         adcodes: ["440300"]           # Block Shenzhen (in Guangdong)
+
+  # Example: Allow multiple countries with province filter
+  # - id: "multi-country"
+  #   listen: "0.0.0.0:10006"
+  #   forward: "127.0.0.1:10007"
+  #   geo_policy:
   #     require_allow_hit: true
-  #     rules:
-  #       - country: "CN"               # All China
+  #     allow:
+  #       - country: "CN"                 # All China
   #       - country: "US"
-  #         provinces: ["California"]   # Only California
-  #       - country: "JP"               # All Japan
-  #       - country: "SG"               # All Singapore
+  #         provinces: ["California"]     # Only California
+  #       - country: "JP"                 # All Japan
+  #       - country: "SG"                 # All Singapore
+  #     deny: []
 
 writer:
   queue_size: 4096

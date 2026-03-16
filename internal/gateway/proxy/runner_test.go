@@ -212,8 +212,7 @@ func TestGeoPolicyDenyModeBlocksMatchingIP(t *testing.T) {
 			Listen:  "127.0.0.1:0",
 			Forward: upstream,
 			GeoPolicy: &rule.GeoPolicy{
-				Mode: "deny",
-				Rules: []rule.GeoRule{
+				Deny: []rule.GeoRule{
 					{Country: "CN"},
 				},
 			},
@@ -273,9 +272,8 @@ func TestGeoPolicyAllowModeWithRequireAllowHit(t *testing.T) {
 			Listen:  "127.0.0.1:0",
 			Forward: "127.0.0.1:9999", // Intentionally wrong, should not be dialed
 			GeoPolicy: &rule.GeoPolicy{
-				Mode:            "allow",
 				RequireAllowHit: true,
-				Rules: []rule.GeoRule{
+				Allow: []rule.GeoRule{
 					{Country: "CN"},
 				},
 			},
@@ -346,8 +344,7 @@ func TestGeoPolicyBlockedConnectionDoesNotDial(t *testing.T) {
 			Listen:  "127.0.0.1:0",
 			Forward: "127.0.0.1:9999",
 			GeoPolicy: &rule.GeoPolicy{
-				Mode: "deny",
-				Rules: []rule.GeoRule{
+				Deny: []rule.GeoRule{
 					{Country: "CN"},
 				},
 			},
@@ -412,8 +409,7 @@ func TestGeoPolicyRecordsGeoInfoInBlockedEvent(t *testing.T) {
 			Listen:  "127.0.0.1:0",
 			Forward: "127.0.0.1:9999",
 			GeoPolicy: &rule.GeoPolicy{
-				Mode: "deny",
-				Rules: []rule.GeoRule{
+				Deny: []rule.GeoRule{
 					{Country: "RU"},
 				},
 			},
