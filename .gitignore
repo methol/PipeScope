@@ -7,3 +7,4 @@ data/*.xdb
 data/*.csv
 data/*.7z
 data/*.txt
+PROCESS_CHECKLIST.md
