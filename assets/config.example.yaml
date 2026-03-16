@@ -11,11 +11,12 @@ proxy_rules:
     listen: "0.0.0.0:10001"
     forward: "127.0.0.1:10002"
     # Geo policy is optional. When not set, all traffic is allowed.
+    # See README.md "场景四：Geo 前置拦截" for detailed usage.
     # geo_policy:
-    #   mode: "allow"                    # Required: "allow" | "deny"
-    #   require_allow_hit: true          # Only valid when mode is "allow"
+    #   mode: "allow"                    # Required: "allow" (whitelist) | "deny" (blacklist)
+    #   require_allow_hit: true          # Only for "allow" mode. If true, connections not matching any rule are blocked.
     #   rules:
-    #     - country: "CN"                # ISO 3166-1 alpha-2 (2 uppercase letters)
+    #     - country: "CN"                # ISO 3166-1 alpha-2 country code (uppercase, e.g. CN, US, JP)
 
   # Example: Allow only China traffic (block all foreign traffic)
   # - id: "china-only"

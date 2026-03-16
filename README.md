@@ -174,11 +174,37 @@ PipeScope 支持在 TCP 连接建立前进行地理策略检查，可用于：
 - 拦截特定省份或城市
 - 仅允许白名单城市访问
 
-**配置示例：**
+##### Geo Policy 配置字段
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `mode` | string | 是 | `allow`（白名单）或 `deny`（黑名单） |
+| `require_allow_hit` | bool | 否 | 仅 `allow` 模式有效。为 `true` 时，未命中任何规则则拒绝连接；为 `false` 时，未命中则放行（默认放行） |
+| `rules[].country` | string | 是 | ISO 3166-1 alpha-2 国家码（如 `CN`、`US`、`JP`），必须大写 |
+| `rules[].provinces` | []string | 否 | 省份名称列表，支持中文（如 `["北京", "广东"]`），会自动标准化（去"省"、"市"后缀） |
+| `rules[].cities` | []string | 否 | 城市名称列表（如 `["深圳", "广州"]`），需配合 `provinces` 使用以避免同名城市歧义 |
+| `rules[].adcodes` | []string | 否 | 6 位行政区划码列表（最精确，如 `["440300"]`），仅国内 IP 有效 |
+
+##### 匹配逻辑
+
+- **匹配优先级**：adcode > city+province > province > country
+- **规则内关系**：`provinces` 与 `cities` 是 AND 关系（需同时匹配）；`provinces`、`cities`、`adcodes` 之间是 OR 关系
+- **多规则匹配**：按配置顺序匹配，首条匹配生效
+
+##### 模式行为
+
+| 模式 | `require_allow_hit` | 命中规则 | 未命中规则 |
+|------|---------------------|----------|------------|
+| `allow` | `false` | 放行 | 放行（默认放行） |
+| `allow` | `true` | 放行 | **拒绝**（白名单模式） |
+| `deny` | （忽略） | **拒绝** | 放行（黑名单模式） |
+
+##### 典型配置示例
+
+**示例 1：仅允许中国流量（禁止国外访问）**
 
 ```yaml
 proxy_rules:
-  # 仅允许中国流量（白名单模式）
   - id: "china-only"
     listen: "0.0.0.0:10001"
     forward: "127.0.0.1:10002"
@@ -186,9 +212,13 @@ proxy_rules:
       mode: "allow"
       require_allow_hit: true    # 必须命中规则才放行
       rules:
-        - country: "CN"          # ISO 3166-1 alpha-2 国家码
+        - country: "CN"          # 仅允许中国
+```
 
-  # 拦截特定省份（黑名单模式）
+**示例 2：禁止特定省份（黑名单模式）**
+
+```yaml
+proxy_rules:
   - id: "block-provinces"
     listen: "0.0.0.0:10002"
     forward: "127.0.0.1:10003"
@@ -198,9 +228,15 @@ proxy_rules:
         - country: "CN"
           provinces: ["福建", "广东"]
         - country: "CN"
-          adcodes: ["440300"]    # 深圳（精确码）
+          adcodes: ["440300"]    # 深圳（精确到行政区划码）
+```
 
-  # 仅允许白名单城市（精确到行政区划码）
+> 注意：`deny` 模式下，未命中规则的流量会放行。如需"允许中国但禁止某省"，需使用两条规则组合或配置两个 proxy_rule。
+
+**示例 3：仅允许白名单城市（精确到行政区划码）**
+
+```yaml
+proxy_rules:
   - id: "whitelist-cities"
     listen: "0.0.0.0:10003"
     forward: "127.0.0.1:10004"
@@ -215,24 +251,66 @@ proxy_rules:
             - "440100"           # 广州
 ```
 
-**Geo Policy 参数说明：**
+##### 拦截记录与状态查询
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `mode` | string | 是 | `allow`（白名单）或 `deny`（黑名单） |
-| `require_allow_hit` | bool | 否 | 仅 `allow` 模式有效，为 `true` 时未命中规则则拒绝 |
-| `rules[].country` | string | 是 | ISO 3166-1 alpha-2 国家码（如 `CN`、`US`） |
-| `rules[].provinces` | []string | 否 | 省份名称列表（支持中文，如 `["北京", "广东"]`） |
-| `rules[].cities` | []string | 否 | 城市名称列表（如 `["深圳", "广州"]`） |
-| `rules[].adcodes` | []string | 否 | 6 位行政区划码列表（最精确，如 `["440300"]`） |
+被拦截的连接会记录到 SQLite 的 `conn_events` 表，通过以下字段标识：
 
-**匹配优先级：** adcode > city+province > province > country
+| 字段 | 值 | 说明 |
+|------|------|------|
+| `status` | `blocked` | 连接被拦截（另有 `ok`、`dial_fail`、`timeout`、`io_err`） |
+| `blocked_reason` | `geo_denied` | 命中 deny 规则 |
+| `blocked_reason` | `geo_not_in_allowlist` | 白名单模式下未命中规则 |
 
-**拦截记录：** 被拦截的连接会记录到 `conn_events` 表，`status` 为连接状态，`blocked_reason` 字段记录拦截原因：
-- `geo_denied`：命中 deny 规则
-- `geo_not_in_allowlist`：白名单模式下未命中规则
+**UI 查看路径：**
+- 管理端「实时会话」页面（`http://127.0.0.1:9100`）可查看 `blocked_reason` 列
+- 使用 rule_id 下拉筛选特定规则的连接
 
-可在管理端「实时会话」页面按状态筛选查看被拦截的连接。
+**SQL 查询示例：**
+
+```sql
+-- 查询被 geo 策略拦截的连接
+SELECT * FROM conn_events WHERE blocked_reason != '' ORDER BY start_ts DESC LIMIT 100;
+
+-- 统计各拦截原因
+SELECT blocked_reason, COUNT(*) FROM conn_events WHERE blocked_reason != '' GROUP BY blocked_reason;
+```
+
+##### 常见问题与排错
+
+**Q1: 配置后不生效，所有流量都放行？**
+
+检查：
+- `geo_policy` 是否正确缩进在 `proxy_rules[*]` 下
+- `mode` 是否为 `allow` 且 `require_allow_hit: true`（白名单模式需显式设置）
+- 国家码是否为大写（如 `CN` 而非 `cn`）
+
+**Q2: 部分国内 IP 被错误拦截？**
+
+可能原因：
+- IP 库数据不完整，某些 IP 无法解析到省份/城市
+- adcode 匹配仅对国内 IP 有效，国外 IP 无 adcode 字段
+- 同名城市歧义（如"吉林"省市同名），建议使用 adcode 精确匹配
+
+**Q3: 如何验证配置是否正确？**
+
+启动时会自动校验配置，错误配置会输出警告。也可手动检查：
+
+```bash
+# 查看启动日志是否有配置错误
+./bin/pipescope -config assets/config.example.yaml 2>&1 | grep -i "geo\|valid"
+```
+
+**Q4: 国外 IP 的省份/城市字段为空，如何匹配？**
+
+国外 IP 通常只有国家码，省份/城市/adcode 字段为空。匹配时：
+- 仅配置 `country` 字段即可匹配国外 IP
+- 如需精确匹配国外地区，建议使用其他 IP 库或外部服务
+
+**Q5: 规则顺序有影响吗？**
+
+有。多规则按配置顺序匹配，首条匹配生效。建议：
+- 精确规则在前（如 adcode）
+- 宽泛规则在后（如仅 country）
 
 ### 6. 排错 / FAQ
 
