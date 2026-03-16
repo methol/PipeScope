@@ -1,10 +1,12 @@
 package sqlite
 
 import (
+	"strings"
+
+	"pipescope/internal/gateway/session"
 	"pipescope/internal/geo/areacity"
 	"pipescope/internal/geo/ip2region"
 	"pipescope/internal/geo/normalize"
-	"pipescope/internal/gateway/session"
 )
 
 type RegionLookup interface {
@@ -16,6 +18,7 @@ type AdcodeMatcher interface {
 }
 
 type enrichedFields struct {
+	Country  string
 	Province string
 	City     string
 	Adcode   string
@@ -25,8 +28,9 @@ type enrichedFields struct {
 
 func enrichGeoFields(evt session.Event, region RegionLookup, matcher AdcodeMatcher) enrichedFields {
 	// If event already has geo info (e.g., from blocked connection), use it directly
-	if evt.Province != "" || evt.City != "" || evt.Adcode != "" {
+	if evt.Country != "" || evt.Province != "" || evt.City != "" || evt.Adcode != "" {
 		return enrichedFields{
+			Country:  evt.Country,
 			Province: evt.Province,
 			City:     evt.City,
 			Adcode:   evt.Adcode,
@@ -47,23 +51,26 @@ func enrichGeoFields(evt session.Event, region RegionLookup, matcher AdcodeMatch
 		return enrichedFields{}
 	}
 
+	country := resolveCountryCode(geo)
 	province := normalize.NormalizeProvince(geo.Province)
 	city := normalize.NormalizeCity(geo.City)
 	if province == "" || city == "" {
-		return enrichedFields{}
+		return enrichedFields{Country: country}
 	}
 
 	dim, ok, err := matcher.Match(province, city)
 	if err != nil {
-		return enrichedFields{}
+		return enrichedFields{Country: country}
 	}
 	if !ok {
 		return enrichedFields{
+			Country:  country,
 			Province: province,
 			City:     city,
 		}
 	}
 	return enrichedFields{
+		Country:  country,
 		Province: province,
 		City:     city,
 		Adcode:   dim.Adcode,
@@ -72,3 +79,9 @@ func enrichGeoFields(evt session.Event, region RegionLookup, matcher AdcodeMatch
 	}
 }
 
+func resolveCountryCode(region ip2region.Region) string {
+	if code := strings.ToUpper(strings.TrimSpace(region.Code)); code != "" {
+		return code
+	}
+	return strings.ToUpper(strings.TrimSpace(region.Country))
+}

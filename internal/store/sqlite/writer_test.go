@@ -126,6 +126,8 @@ func TestWriterEnrichesGeoFields(t *testing.T) {
 	w.SetGeoEnricher(
 		fakeRegionLookup{
 			region: ip2region.Region{
+				Country:  "中国",
+				Code:     "CN",
 				Province: "广东",
 				City:     "深圳",
 			},
@@ -164,15 +166,18 @@ func TestWriterEnrichesGeoFields(t *testing.T) {
 		t.Fatalf("writer did not stop")
 	}
 
-	var province, city, adcode string
+	var country, province, city, adcode string
 	var lat, lng float64
 	if err := db.QueryRow(`
-SELECT province, city, adcode, lat, lng
+SELECT country, province, city, adcode, lat, lng
 FROM conn_events
 WHERE rule_id = 'r-geo'
 LIMIT 1
-`).Scan(&province, &city, &adcode, &lat, &lng); err != nil {
+`).Scan(&country, &province, &city, &adcode, &lat, &lng); err != nil {
 		t.Fatalf("query geo row: %v", err)
+	}
+	if country != "CN" {
+		t.Fatalf("unexpected country: %s", country)
 	}
 	if province != "广东" || city != "深圳" || adcode != "440300" {
 		t.Fatalf("unexpected geo fields: %s %s %s", province, city, adcode)
@@ -378,6 +383,7 @@ func TestWriterUsesEventGeoFieldsForBlockedConnection(t *testing.T) {
 		EndTS:         time.Now().UnixMilli(),
 		Status:        "blocked",
 		BlockedReason: "geo_denied",
+		Country:       "CN",
 		Province:      "北京",
 		City:          "北京",
 		Adcode:        "110000",
@@ -393,13 +399,13 @@ func TestWriterUsesEventGeoFieldsForBlockedConnection(t *testing.T) {
 		t.Fatalf("writer did not stop")
 	}
 
-	var status, blockedReason, province, city, adcode string
+	var status, blockedReason, country, province, city, adcode string
 	if err := db.QueryRow(`
-SELECT status, blocked_reason, province, city, adcode
+SELECT status, blocked_reason, country, province, city, adcode
 FROM conn_events
 WHERE rule_id = 'r-blocked'
 LIMIT 1
-`).Scan(&status, &blockedReason, &province, &city, &adcode); err != nil {
+`).Scan(&status, &blockedReason, &country, &province, &city, &adcode); err != nil {
 		t.Fatalf("query row: %v", err)
 	}
 	if status != "blocked" {
@@ -409,6 +415,9 @@ LIMIT 1
 		t.Fatalf("expected blocked_reason=geo_denied, got %s", blockedReason)
 	}
 	// Geo fields should come from event, not from enricher
+	if country != "CN" {
+		t.Fatalf("expected country=CN, got %s", country)
+	}
 	if province != "北京" {
 		t.Fatalf("expected province=北京, got %s", province)
 	}

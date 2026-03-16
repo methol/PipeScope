@@ -453,3 +453,49 @@ func TestMatcher_TypicalScenarios(t *testing.T) {
 		}
 	})
 }
+
+func TestMatcher_AllowCNWithDenyXinjiangTibet(t *testing.T) {
+	provinceCases := []struct {
+		name   string
+		info   GeoInfo
+		allow  bool
+		reason string
+	}{
+		{name: "sichuan allowed", info: GeoInfo{Country: "CN", Province: "四川", City: "成都", Adcode: "5101"}, allow: true},
+		{name: "hubei allowed", info: GeoInfo{Country: "CN", Province: "湖北", City: "武汉", Adcode: "4201"}, allow: true},
+		{name: "guizhou allowed", info: GeoInfo{Country: "CN", Province: "贵州", City: "遵义", Adcode: "5203"}, allow: true},
+		{name: "xinjiang denied", info: GeoInfo{Country: "CN", Province: "新疆", City: "乌鲁木齐", Adcode: "6501"}, allow: false, reason: BlockedReasonDenied},
+		{name: "tibet denied", info: GeoInfo{Country: "CN", Province: "西藏", City: "拉萨", Adcode: "5401"}, allow: false, reason: BlockedReasonDenied},
+	}
+
+	for _, requireAllowHit := range []bool{false, true} {
+		name := "require_allow_hit_false"
+		if requireAllowHit {
+			name = "require_allow_hit_true"
+		}
+
+		t.Run(name, func(t *testing.T) {
+			m := NewMatcher(&rule.GeoPolicy{
+				RequireAllowHit: requireAllowHit,
+				Allow: []rule.GeoRule{
+					{Country: "CN"},
+				},
+				Deny: []rule.GeoRule{
+					{Country: "CN", Provinces: []string{"新疆", "西藏"}},
+				},
+			})
+
+			for _, tc := range provinceCases {
+				t.Run(tc.name, func(t *testing.T) {
+					got := m.Check(tc.info)
+					if got.Allowed != tc.allow {
+						t.Fatalf("allowed=%v want=%v result=%+v", got.Allowed, tc.allow, got)
+					}
+					if got.BlockedReason != tc.reason {
+						t.Fatalf("blocked_reason=%q want=%q", got.BlockedReason, tc.reason)
+					}
+				})
+			}
+		})
+	}
+}

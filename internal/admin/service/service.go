@@ -92,7 +92,7 @@ func (s *Service) Sessions(ctx context.Context, q SessionsQuery) ([]SessionItem,
 	}
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, rule_id, src_addr, dst_addr, status, up_bytes, down_bytes, total_bytes,
-       start_ts, end_ts, duration_ms, province, city, adcode, blocked_reason
+       start_ts, end_ts, duration_ms, country, province, city, adcode, blocked_reason
 FROM conn_events
 WHERE start_ts >= ?
   AND (? = '' OR rule_id = ?)
@@ -119,6 +119,7 @@ LIMIT ? OFFSET ?
 			&item.StartTS,
 			&item.EndTS,
 			&item.DurationMS,
+			&item.Country,
 			&item.Province,
 			&item.City,
 			&item.Adcode,

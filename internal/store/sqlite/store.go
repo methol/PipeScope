@@ -57,6 +57,7 @@ func (s *Store) migrateLegacyConnEvents(ctx context.Context) error {
 		{name: "total_bytes", ddl: "ALTER TABLE conn_events ADD COLUMN total_bytes INTEGER NOT NULL DEFAULT 0"},
 		{name: "err_msg", ddl: "ALTER TABLE conn_events ADD COLUMN err_msg TEXT NOT NULL DEFAULT ''"},
 		{name: "blocked_reason", ddl: "ALTER TABLE conn_events ADD COLUMN blocked_reason TEXT NOT NULL DEFAULT ''"},
+		{name: "country", ddl: "ALTER TABLE conn_events ADD COLUMN country TEXT NOT NULL DEFAULT ''"},
 		{name: "province", ddl: "ALTER TABLE conn_events ADD COLUMN province TEXT NOT NULL DEFAULT ''"},
 		{name: "city", ddl: "ALTER TABLE conn_events ADD COLUMN city TEXT NOT NULL DEFAULT ''"},
 		{name: "adcode", ddl: "ALTER TABLE conn_events ADD COLUMN adcode TEXT NOT NULL DEFAULT ''"},

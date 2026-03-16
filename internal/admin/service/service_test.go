@@ -57,6 +57,7 @@ func TestChinaMapAggregation(t *testing.T) {
 
 type seedEvent struct {
 	RuleID     string
+	Country    string
 	Adcode     string
 	City       string
 	Province   string
@@ -70,9 +71,9 @@ func seedConnEvent(t *testing.T, db *sql.DB, e seedEvent) {
 INSERT INTO conn_events(
   rule_id, listen_port, src_addr, src_ip, dst_addr, dst_host, dst_port,
   start_ts, end_ts, duration_ms, up_bytes, down_bytes, total_bytes,
-  status, err_msg, province, city, adcode, lat, lng
-) VALUES (?, 10001, '1.1.1.1:1', '1.1.1.1', '2.2.2.2:2', '2.2.2.2', 2, ?, ?, 0, 1, 1, ?, 'ok', '', ?, ?, ?, 22.5, 114.0)
-`, e.RuleID, e.StartTS, e.StartTS+1, e.TotalBytes, e.Province, e.City, e.Adcode)
+  status, err_msg, country, province, city, adcode, lat, lng
+) VALUES (?, 10001, '1.1.1.1:1', '1.1.1.1', '2.2.2.2:2', '2.2.2.2', 2, ?, ?, 0, 1, 1, ?, 'ok', '', ?, ?, ?, ?, 22.5, 114.0)
+`, e.RuleID, e.StartTS, e.StartTS+1, e.TotalBytes, e.Country, e.Province, e.City, e.Adcode)
 	if err != nil {
 		t.Fatalf("seed conn_events: %v", err)
 	}
@@ -135,6 +136,46 @@ func TestProvinceSummaryAggregation(t *testing.T) {
 	}
 	if points[0].Province != "浙江省" || points[0].Value != 800 {
 		t.Fatalf("unexpected bytes top point: %+v", points[0])
+	}
+}
+
+func TestSessionsReturnsCountry(t *testing.T) {
+	db := openTempDB(t)
+	store := sqlitestore.New(db)
+	if err := store.InitSchema(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	nowMS := now.UnixMilli()
+	seedConnEvent(t, db, seedEvent{
+		RuleID:     "r-country",
+		Country:    "CN",
+		Province:   "四川",
+		City:       "成都",
+		Adcode:     "5101",
+		TotalBytes: 100,
+		StartTS:    nowMS - int64((5*time.Minute)/time.Millisecond),
+	})
+
+	svc := New(db)
+	svc.SetNowFunc(func() time.Time { return now })
+
+	items, err := svc.Sessions(context.Background(), SessionsQuery{
+		Window: 15 * time.Minute,
+		Limit:  10,
+	})
+	if err != nil {
+		t.Fatalf("Sessions: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("items len=%d want=1", len(items))
+	}
+	if items[0].Country != "CN" {
+		t.Fatalf("country=%q want=CN", items[0].Country)
+	}
+	if items[0].Province != "四川" || items[0].City != "成都" || items[0].Adcode != "5101" {
+		t.Fatalf("unexpected geo fields: %+v", items[0])
 	}
 }
 
