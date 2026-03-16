@@ -50,6 +50,67 @@ CREATE TABLE conn_events (
 	requireColumn(t, db, "conn_events", "lng")
 }
 
+func TestInitSchemaBackfillsLegacyCreatedAtForExistingRows(t *testing.T) {
+	db := openTempDB(t)
+	if _, err := db.Exec(`
+CREATE TABLE conn_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'ok',
+    start_ts INTEGER NOT NULL DEFAULT 0,
+    end_ts INTEGER NOT NULL DEFAULT 0
+);
+`); err != nil {
+		t.Fatalf("create legacy conn_events: %v", err)
+	}
+	if _, err := db.Exec(`
+INSERT INTO conn_events(rule_id, status, start_ts, end_ts) VALUES
+    ('r-end', 'ok', 111, 222),
+    ('r-start', 'ok', 333, 0),
+    ('r-zero', 'ok', 0, 0);
+`); err != nil {
+		t.Fatalf("seed legacy conn_events: %v", err)
+	}
+
+	s := New(db)
+	if err := s.InitSchema(context.Background()); err != nil {
+		t.Fatalf("init schema with migration: %v", err)
+	}
+
+	rows, err := db.Query(`SELECT rule_id, created_at FROM conn_events ORDER BY id`)
+	if err != nil {
+		t.Fatalf("query migrated rows: %v", err)
+	}
+	defer rows.Close()
+
+	got := map[string]int64{}
+	for rows.Next() {
+		var ruleID string
+		var createdAt int64
+		if err := rows.Scan(&ruleID, &createdAt); err != nil {
+			t.Fatalf("scan migrated row: %v", err)
+		}
+		got[ruleID] = createdAt
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate migrated rows: %v", err)
+	}
+
+	want := map[string]int64{
+		"r-end":   222,
+		"r-start": 333,
+		"r-zero":  0,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("row count mismatch: got=%d want=%d", len(got), len(want))
+	}
+	for ruleID, wantCreatedAt := range want {
+		if got[ruleID] != wantCreatedAt {
+			t.Fatalf("created_at mismatch for %s: got=%d want=%d", ruleID, got[ruleID], wantCreatedAt)
+		}
+	}
+}
+
 func openTempDB(t *testing.T) *sql.DB {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "pipescope-test.db")
