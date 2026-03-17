@@ -57,6 +57,7 @@ func TestChinaMapAggregation(t *testing.T) {
 
 type seedEvent struct {
 	RuleID     string
+	SrcIP      string
 	Country    string
 	Adcode     string
 	City       string
@@ -72,11 +73,18 @@ INSERT INTO conn_events(
   rule_id, listen_port, src_addr, src_ip, dst_addr, dst_host, dst_port,
   start_ts, end_ts, duration_ms, up_bytes, down_bytes, total_bytes,
   status, err_msg, country, province, city, adcode, lat, lng
-) VALUES (?, 10001, '1.1.1.1:1', '1.1.1.1', '2.2.2.2:2', '2.2.2.2', 2, ?, ?, 0, 1, 1, ?, 'ok', '', ?, ?, ?, ?, 22.5, 114.0)
-`, e.RuleID, e.StartTS, e.StartTS+1, e.TotalBytes, e.Country, e.Province, e.City, e.Adcode)
+) VALUES (?, 10001, ?, ?, '2.2.2.2:2', '2.2.2.2', 2, ?, ?, 0, 1, 1, ?, 'ok', '', ?, ?, ?, ?, 22.5, 114.0)
+`, e.RuleID, firstNonEmpty(e.SrcIP, "1.1.1.1")+":1", firstNonEmpty(e.SrcIP, "1.1.1.1"), e.StartTS, e.StartTS+1, e.TotalBytes, e.Country, e.Province, e.City, e.Adcode)
 	if err != nil {
 		t.Fatalf("seed conn_events: %v", err)
 	}
+}
+
+func firstNonEmpty(value string, fallback string) string {
+	if value != "" {
+		return value
+	}
+	return fallback
 }
 
 func TestProvinceSummaryAggregation(t *testing.T) {

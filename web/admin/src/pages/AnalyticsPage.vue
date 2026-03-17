@@ -15,6 +15,7 @@ const ruleID = ref('')
 const province = ref('')
 const city = ref('')
 const status = ref('')
+const srcIP = ref('')
 const topN = ref('10')
 const loading = ref(false)
 const optionsLoading = ref(false)
@@ -57,6 +58,7 @@ async function loadOptions() {
       province: province.value,
       city: city.value,
       status: status.value,
+      src_ip: srcIP.value,
     })
   } finally {
     optionsLoading.value = false
@@ -84,6 +86,7 @@ async function search() {
       province: province.value,
       city: city.value,
       status: status.value,
+      src_ip: srcIP.value,
       top_n: topN.value,
     })
   } catch (e) {
@@ -151,6 +154,10 @@ void loadOptions()
             <option value="">全部</option>
             <option v-for="item in options.statuses" :key="item" :value="item">{{ item }}</option>
           </select>
+        </label>
+        <label>
+          源 IP
+          <input v-model.trim="srcIP" type="text" placeholder="例如 10.0.0.8" />
         </label>
         <label>
           Top

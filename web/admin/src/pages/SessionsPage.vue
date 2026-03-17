@@ -4,6 +4,7 @@ import { fetchSessions, fetchSessionsOptions, type SessionItem, type SessionsOpt
 import { formatBytes } from '../utils/format'
 
 const ruleID = ref('')
+const limit = ref('100')
 const items = ref<SessionItem[]>([])
 const options = ref<SessionsOptions>({ rules: [] })
 const error = ref('')
@@ -27,7 +28,7 @@ async function load() {
     items.value = await fetchSessions({
       window: '5m',
       rule_id: ruleID.value,
-      limit: '100',
+      limit: limit.value,
       offset: '0',
     })
   } catch (e) {
@@ -37,7 +38,7 @@ async function load() {
   }
 }
 
-watch(ruleID, () => {
+watch([ruleID, limit], () => {
   void load()
 })
 
@@ -64,6 +65,14 @@ onUnmounted(() => {
           <select v-model="ruleID" :disabled="optionsLoading">
             <option value="">全部</option>
             <option v-for="item in options.rules" :key="item" :value="item">{{ item }}</option>
+          </select>
+        </label>
+        <label>
+          Limit
+          <select v-model="limit">
+            <option value="100">100</option>
+            <option value="1000">1000</option>
+            <option value="all">all</option>
           </select>
         </label>
       </div>

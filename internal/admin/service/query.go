@@ -36,6 +36,7 @@ type AnalyticsQuery struct {
 	Province string
 	City     string
 	Status   string
+	SrcIP    string
 	TopN     int
 }
 
@@ -45,6 +46,7 @@ type AnalyticsOptionsQuery struct {
 	Province string
 	City     string
 	Status   string
+	SrcIP    string
 }
 
 type ProvinceQuery struct {

@@ -78,6 +78,53 @@ describe('AnalyticsPage', () => {
     expect(wrapper.text()).toContain('广东深圳 - 1.46 KB')
   })
 
+  it('passes src_ip to analytics queries', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input)
+        if (url.includes('/api/analytics/options?')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              rules: ['r1'],
+              provinces: ['广东'],
+              cities: [{ province: '广东', city: '深圳' }],
+              statuses: ['ok'],
+            }),
+          }
+        }
+        if (!url.includes('/api/analytics?')) throw new Error('unexpected')
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            overview: {
+              conn_count: 1,
+              total_bytes: 3,
+              avg_duration_ms: 10,
+              active_rules: 1,
+              active_cities: 1,
+            },
+            top_cities: [{ name: '广东深圳', conn_count: 1, total_bytes: 3 }],
+            top_rules: [{ name: 'r1', conn_count: 1, total_bytes: 3 }],
+          }),
+        }
+      }),
+    )
+
+    const wrapper = mount(AnalyticsPage)
+    await flushPage()
+
+    await wrapper.find('input').setValue('10.0.0.8')
+    await wrapper.find('button.btn').trigger('click')
+    await flushPage()
+
+    const calls = (fetch as ReturnType<typeof vi.fn>).mock.calls.map((x) => String(x[0]))
+    expect(calls.some((url) => url.includes('/api/analytics?') && url.includes('src_ip=10.0.0.8'))).toBe(true)
+  })
+
   it('filters city options by selected province', async () => {
     vi.stubGlobal(
       'fetch',

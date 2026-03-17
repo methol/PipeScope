@@ -149,6 +149,7 @@ export async function fetchAnalytics(params: {
   province?: string
   city?: string
   status?: string
+  src_ip?: string
   top_n?: string
 }): Promise<AnalyticsResult> {
   const q = new URLSearchParams()
@@ -157,6 +158,7 @@ export async function fetchAnalytics(params: {
   if (params.province) q.set('province', params.province)
   if (params.city) q.set('city', params.city)
   if (params.status) q.set('status', params.status)
+  if (params.src_ip) q.set('src_ip', params.src_ip)
   if (params.top_n) q.set('top_n', params.top_n)
   return fetchJSON<AnalyticsResult>(`/api/analytics?${q.toString()}`)
 }
@@ -167,6 +169,7 @@ export async function fetchAnalyticsOptions(params: {
   province?: string
   city?: string
   status?: string
+  src_ip?: string
 }): Promise<AnalyticsOptions> {
   const q = new URLSearchParams()
   q.set('window', params.window)
@@ -174,5 +177,6 @@ export async function fetchAnalyticsOptions(params: {
   if (params.province) q.set('province', params.province)
   if (params.city) q.set('city', params.city)
   if (params.status) q.set('status', params.status)
+  if (params.src_ip) q.set('src_ip', params.src_ip)
   return fetchJSON<AnalyticsOptions>(`/api/analytics/options?${q.toString()}`)
 }

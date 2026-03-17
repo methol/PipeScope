@@ -53,9 +53,9 @@ func TestAnalyticsOptions(t *testing.T) {
 
 	now := time.Now()
 	nowMS := now.UnixMilli()
-	seedConnEventWithStatus(t, db, seedEventWithStatus{seedEvent: seedEvent{RuleID: "r1", Province: "广东", City: "深圳", TotalBytes: 100, StartTS: nowMS - int64((5*time.Minute)/time.Millisecond)}, Status: "ok", DurationMS: 20})
-	seedConnEventWithStatus(t, db, seedEventWithStatus{seedEvent: seedEvent{RuleID: "r2", Province: "广东", City: "珠海", TotalBytes: 80, StartTS: nowMS - int64((4*time.Minute)/time.Millisecond)}, Status: "err", DurationMS: 60})
-	seedConnEventWithStatus(t, db, seedEventWithStatus{seedEvent: seedEvent{RuleID: "r3", Province: "浙江", City: "杭州", TotalBytes: 200, StartTS: nowMS - int64((3*time.Minute)/time.Millisecond)}, Status: "ok", DurationMS: 40})
+	seedConnEventWithStatus(t, db, seedEventWithStatus{seedEvent: seedEvent{RuleID: "r1", SrcIP: "10.0.0.8", Province: "广东", City: "深圳", TotalBytes: 100, StartTS: nowMS - int64((5*time.Minute)/time.Millisecond)}, Status: "ok", DurationMS: 20})
+	seedConnEventWithStatus(t, db, seedEventWithStatus{seedEvent: seedEvent{RuleID: "r2", SrcIP: "10.0.0.9", Province: "广东", City: "珠海", TotalBytes: 80, StartTS: nowMS - int64((4*time.Minute)/time.Millisecond)}, Status: "err", DurationMS: 60})
+	seedConnEventWithStatus(t, db, seedEventWithStatus{seedEvent: seedEvent{RuleID: "r3", SrcIP: "10.0.0.10", Province: "浙江", City: "杭州", TotalBytes: 200, StartTS: nowMS - int64((3*time.Minute)/time.Millisecond)}, Status: "ok", DurationMS: 40})
 
 	svc := New(db)
 	svc.SetNowFunc(func() time.Time { return now })
@@ -76,6 +76,14 @@ func TestAnalyticsOptions(t *testing.T) {
 	if len(filtered.Cities) != 2 {
 		t.Fatalf("unexpected linked cities: %+v", filtered.Cities)
 	}
+
+	srcFiltered, err := svc.AnalyticsOptions(context.Background(), AnalyticsOptionsQuery{Window: 15 * time.Minute, SrcIP: "10.0.0.8"})
+	if err != nil {
+		t.Fatalf("AnalyticsOptions with src_ip filter: %v", err)
+	}
+	if len(srcFiltered.Rules) != 1 || srcFiltered.Rules[0] != "r1" {
+		t.Fatalf("unexpected src_ip rules: %+v", srcFiltered.Rules)
+	}
 }
 
 func TestAnalyticsFilters(t *testing.T) {
@@ -87,9 +95,9 @@ func TestAnalyticsFilters(t *testing.T) {
 
 	now := time.Now()
 	nowMS := now.UnixMilli()
-	seedConnEventWithStatus(t, db, seedEventWithStatus{seedEvent: seedEvent{RuleID: "r1", Province: "广东", City: "深圳", TotalBytes: 100, StartTS: nowMS - int64((5*time.Minute)/time.Millisecond)}, Status: "ok", DurationMS: 20})
-	seedConnEventWithStatus(t, db, seedEventWithStatus{seedEvent: seedEvent{RuleID: "r1", Province: "广东", City: "深圳", TotalBytes: 80, StartTS: nowMS - int64((4*time.Minute)/time.Millisecond)}, Status: "err", DurationMS: 60})
-	seedConnEventWithStatus(t, db, seedEventWithStatus{seedEvent: seedEvent{RuleID: "r2", Province: "浙江", City: "杭州", TotalBytes: 200, StartTS: nowMS - int64((3*time.Minute)/time.Millisecond)}, Status: "ok", DurationMS: 40})
+	seedConnEventWithStatus(t, db, seedEventWithStatus{seedEvent: seedEvent{RuleID: "r1", SrcIP: "10.0.0.8", Province: "广东", City: "深圳", TotalBytes: 100, StartTS: nowMS - int64((5*time.Minute)/time.Millisecond)}, Status: "ok", DurationMS: 20})
+	seedConnEventWithStatus(t, db, seedEventWithStatus{seedEvent: seedEvent{RuleID: "r1", SrcIP: "10.0.0.9", Province: "广东", City: "深圳", TotalBytes: 80, StartTS: nowMS - int64((4*time.Minute)/time.Millisecond)}, Status: "err", DurationMS: 60})
+	seedConnEventWithStatus(t, db, seedEventWithStatus{seedEvent: seedEvent{RuleID: "r2", SrcIP: "10.0.0.10", Province: "浙江", City: "杭州", TotalBytes: 200, StartTS: nowMS - int64((3*time.Minute)/time.Millisecond)}, Status: "ok", DurationMS: 40})
 
 	svc := New(db)
 	svc.SetNowFunc(func() time.Time { return now })
@@ -114,6 +122,18 @@ func TestAnalyticsFilters(t *testing.T) {
 	}
 	if len(res.TopRules) != 1 || res.TopRules[0].Name != "r1" {
 		t.Fatalf("unexpected top rules: %+v", res.TopRules)
+	}
+
+	srcFiltered, err := svc.Analytics(context.Background(), AnalyticsQuery{
+		Window: 15 * time.Minute,
+		SrcIP:  "10.0.0.8",
+		TopN:   5,
+	})
+	if err != nil {
+		t.Fatalf("Analytics with src_ip filter: %v", err)
+	}
+	if srcFiltered.Overview.ConnCount != 1 || len(srcFiltered.TopRules) != 1 || srcFiltered.TopRules[0].Name != "r1" {
+		t.Fatalf("unexpected src_ip analytics: %+v", srcFiltered)
 	}
 }
 
@@ -162,8 +182,8 @@ INSERT INTO conn_events(
   rule_id, listen_port, src_addr, src_ip, dst_addr, dst_host, dst_port,
   start_ts, end_ts, duration_ms, up_bytes, down_bytes, total_bytes,
   status, err_msg, province, city, adcode, lat, lng
-) VALUES (?, 10001, '1.1.1.1:1', '1.1.1.1', '2.2.2.2:2', '2.2.2.2', 2, ?, ?, ?, 1, 1, ?, ?, '', ?, ?, '', 22.5, 114.0)
-`, e.RuleID, e.StartTS, e.StartTS+1, e.DurationMS, e.TotalBytes, e.Status, e.Province, e.City)
+) VALUES (?, 10001, ?, ?, '2.2.2.2:2', '2.2.2.2', 2, ?, ?, ?, 1, 1, ?, ?, '', ?, ?, '', 22.5, 114.0)
+`, e.RuleID, firstNonEmpty(e.SrcIP, "1.1.1.1")+":1", firstNonEmpty(e.SrcIP, "1.1.1.1"), e.StartTS, e.StartTS+1, e.DurationMS, e.TotalBytes, e.Status, e.Province, e.City)
 	if err != nil {
 		t.Fatalf("seed conn_events with status: %v", err)
 	}
