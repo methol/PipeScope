@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { cityKey, createCityJoinKeyResolver, normalizeAdcode6, normalizeCityGeoFeatures, shouldKeepCityPolygon } from './mapCity'
+import {
+  cityKey,
+  createCityJoinKeyResolver,
+  extractProvinceBoundarySegments,
+  normalizeAdcode6,
+  normalizeCityGeoFeatures,
+  shouldKeepCityPolygon,
+} from './mapCity'
 
 describe('mapCity helpers', () => {
   it('normalizes adcode and always uses 4-digit city key', () => {
@@ -60,5 +67,35 @@ describe('mapCity helpers', () => {
     expect(resolve({ province: '重庆市', city: '重庆市', adcode: '5001' })).toBe('5001')
     expect(resolve({ province: '重庆市', city: '重庆城区', adcode: '500100' })).toBe('5001')
     expect(resolve({ province: '重庆市', city: '重庆郊县', adcode: '500200' })).toBe('5002')
+  })
+
+  it('extracts province boundary segments without internal city seams', () => {
+    const features = [
+      {
+        properties: { province: '甲省', city: '甲市一', adcode: '110100' },
+        geometry: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] },
+      },
+      {
+        properties: { province: '甲省', city: '甲市二', adcode: '110200' },
+        geometry: { type: 'Polygon', coordinates: [[[1, 0], [2, 0], [2, 1], [1, 1], [1, 0]]] },
+      },
+      {
+        properties: { province: '乙省', city: '乙市一', adcode: '120100' },
+        geometry: { type: 'Polygon', coordinates: [[[2, 0], [3, 0], [3, 1], [2, 1], [2, 0]]] },
+      },
+    ]
+
+    const keyOf = (segment: number[][]) =>
+      segment
+        .map((point) => point.map((value) => value.toFixed(6)).join(','))
+        .sort()
+        .join('|')
+
+    const segments = extractProvinceBoundarySegments(features as any[])
+    const keys = new Set(segments.map((segment) => keyOf(segment)))
+
+    expect(keys.has(keyOf([[1, 0], [1, 1]]))).toBe(false)
+    expect(keys.has(keyOf([[0, 0], [0, 1]]))).toBe(true)
+    expect(keys.has(keyOf([[2, 0], [2, 1]]))).toBe(true)
   })
 })

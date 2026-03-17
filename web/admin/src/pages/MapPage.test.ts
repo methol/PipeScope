@@ -18,7 +18,12 @@ import MapPage from './MapPage.vue'
 
 const geoJSON = {
   type: 'FeatureCollection',
-  features: [{ properties: { province: '广东省', city: '深圳市', adcode: '440300' } }],
+  features: [
+    {
+      properties: { province: '广东省', city: '深圳市', adcode: '440300' },
+      geometry: { type: 'Polygon', coordinates: [[[113, 22], [114, 22], [114, 23], [113, 23], [113, 22]]] },
+    },
+  ],
 }
 
 function stubFetch(options?: {
@@ -51,6 +56,18 @@ function stubFetch(options?: {
     'fetch',
     vi.fn(async (input: string | URL | Request) => {
       const url = String(input)
+      if (url.includes('/api/analytics/options?')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            rules: ['r1'],
+            provinces: ['广东省'],
+            cities: [{ province: '广东省', city: '深圳市' }],
+            statuses: ['ok'],
+          }),
+        }
+      }
       if (url.includes('/maps/china-cities.geojson')) {
         return {
           ok: geoOK,
@@ -119,7 +136,7 @@ describe('MapPage', () => {
     const wrapper = mount(MapPage)
     await flushPage()
 
-    await wrapper.findAll('select')[1].setValue('bytes')
+    await wrapper.findAll('select')[3].setValue('bytes')
     await flushPage()
 
     const calls = (fetch as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]))
@@ -138,6 +155,18 @@ describe('MapPage', () => {
     const tooltip = String(lastChartOption.tooltip.formatter({ name: '4403' }))
     expect(tooltip).toContain('深圳市')
     expect(tooltip).not.toContain('440300<br/>')
+
+    wrapper.unmount()
+  })
+
+  it('shows readable city name in hover label for no-data regions', async () => {
+    stubFetch({ apiItems: [] })
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    expect(lastChartOption?.series?.[0]?.emphasis?.label?.formatter).toBeTypeOf('function')
+    const label = String(lastChartOption.series[0].emphasis.label.formatter({ name: '4403' }))
+    expect(label).toBe('深圳市')
 
     wrapper.unmount()
   })
@@ -193,6 +222,19 @@ describe('MapPage', () => {
 
     expect(wrapper.text()).toContain('当前窗口暂无城市指标数据')
     expect(wrapper.find('.chart').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('adds a thicker province-boundary overlay on top of city polygons', async () => {
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    expect(lastChartOption?.geo?.map).toBe('china-cities')
+    expect(lastChartOption?.series?.[1]?.type).toBe('lines')
+    expect(lastChartOption?.series?.[1]?.coordinateSystem).toBe('geo')
+    expect(lastChartOption?.series?.[1]?.lineStyle?.width).toBeGreaterThan(lastChartOption?.series?.[0]?.itemStyle?.borderWidth)
+    expect(lastChartOption?.series?.[1]?.data?.length).toBeGreaterThan(0)
 
     wrapper.unmount()
   })
