@@ -29,6 +29,7 @@ const geoJSON = {
 function stubFetch(options?: {
   geoOK?: boolean
   cityOK?: boolean
+  geoJSON?: any
   apiItems?: Array<{
     adcode: string
     province: string
@@ -40,6 +41,7 @@ function stubFetch(options?: {
 }) {
   const geoOK = options?.geoOK ?? true
   const cityOK = options?.cityOK ?? true
+  const mapGeoJSON = options?.geoJSON ?? geoJSON
   const apiItems =
     options?.apiItems ?? [
       {
@@ -72,7 +74,7 @@ function stubFetch(options?: {
         return {
           ok: geoOK,
           status: geoOK ? 200 : 500,
-          json: async () => geoJSON,
+          json: async () => mapGeoJSON,
         }
       }
       if (url.includes('/api/map/china')) {
@@ -152,7 +154,7 @@ describe('MapPage', () => {
     await flushPage()
 
     expect(lastChartOption?.tooltip?.formatter).toBeTypeOf('function')
-    const tooltip = String(lastChartOption.tooltip.formatter({ name: '4403' }))
+    const tooltip = String(lastChartOption.tooltip.formatter({ name: '440300' }))
     expect(tooltip).toContain('深圳市')
     expect(tooltip).not.toContain('440300<br/>')
 
@@ -165,8 +167,38 @@ describe('MapPage', () => {
     await flushPage()
 
     expect(lastChartOption?.series?.[0]?.emphasis?.label?.formatter).toBeTypeOf('function')
-    const label = String(lastChartOption.series[0].emphasis.label.formatter({ name: '4403' }))
+    const label = String(lastChartOption.series[0].emphasis.label.formatter({ name: '440300' }))
     expect(label).toBe('深圳市')
+
+    wrapper.unmount()
+  })
+
+  it('keeps no-data hover naming stable for direct-admin city keys that previously collided', async () => {
+    stubFetch({
+      geoJSON: {
+        type: 'FeatureCollection',
+        features: [
+          {
+            properties: { province: '海南省', city: '五指山市', adcode: '469001' },
+            geometry: { type: 'Polygon', coordinates: [[[109, 18], [110, 18], [110, 19], [109, 19], [109, 18]]] },
+          },
+          {
+            properties: { province: '海南省', city: '临高县', adcode: '469024' },
+            geometry: { type: 'Polygon', coordinates: [[[108, 19], [109, 19], [109, 20], [108, 20], [108, 19]]] },
+          },
+        ],
+      },
+      apiItems: [],
+    })
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    const tooltip = String(lastChartOption.tooltip.formatter({ name: '469024' }))
+    expect(tooltip).toContain('临高县')
+    expect(tooltip).not.toContain('五指山市')
+
+    const label = String(lastChartOption.series[0].emphasis.label.formatter({ name: '469024' }))
+    expect(label).toBe('临高县')
 
     wrapper.unmount()
   })
@@ -197,7 +229,7 @@ describe('MapPage', () => {
     await flushPage()
 
     expect(lastChartOption?.series?.[0]?.data).toEqual([
-      expect.objectContaining({ name: '4403', cityName: '深圳市', value: 5 }),
+      expect.objectContaining({ name: '440300', cityName: '深圳市', value: 5 }),
     ])
     expect(lastChartOption?.visualMap?.min).toBe(5)
     expect(lastChartOption?.visualMap?.max).toBe(6)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import {
   fetchAnalytics,
   fetchAnalyticsOptions,
@@ -20,6 +20,7 @@ const topN = ref('10')
 const loading = ref(false)
 const optionsLoading = ref(false)
 const error = ref('')
+const citySelectionProvince = ref('')
 
 const analytics = ref<AnalyticsResult>({
   overview: {
@@ -44,37 +45,142 @@ const filteredCities = computed<AnalyticsCityOption[]>(() => {
   if (!province.value) return options.value.cities
   return options.value.cities.filter((item) => item.province === province.value)
 })
+const optionsSrcIP = computed(() => resolveOptionsSrcIP(srcIP.value))
+
+let optionsRequestID = 0
+let suppressedOptionsReloads = 0
 
 function formatBucket(item: AnalyticsBucket): string {
   return `${item.name} - ${formatBytes(item.total_bytes)}`
 }
 
+function pickValidSelection(current: string, available: string[]): string {
+  return current && !available.includes(current) ? '' : current
+}
+
+function isCompleteIPv4(value: string): boolean {
+  const octets = value.split('.')
+  return octets.length === 4 && octets.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255)
+}
+
+function isCompleteIPv6(value: string): boolean {
+  if (!value.includes(':') || !/^[0-9a-f:.]+$/i.test(value)) {
+    return false
+  }
+
+  const compressed = value.split('::')
+  if (compressed.length > 2) {
+    return false
+  }
+
+  const parseGroups = (segment: string): string[] => (segment ? segment.split(':') : [])
+  const left = parseGroups(compressed[0])
+  const right = compressed.length === 2 ? parseGroups(compressed[1]) : []
+  const hasValidGroups = [...left, ...right].every((group) => /^[0-9a-f]{1,4}$/i.test(group))
+  if (!hasValidGroups) {
+    return false
+  }
+
+  if (compressed.length === 1) {
+    return left.length === 8
+  }
+  return left.length + right.length < 8
+}
+
+function resolveOptionsSrcIP(value: string): string | null {
+  if (!value) return ''
+  return isCompleteIPv4(value) || isCompleteIPv6(value) ? value : null
+}
+
+function citySelectionScope(nextProvince = province.value): string {
+  return nextProvince || citySelectionProvince.value
+}
+
+function pickValidCitySelection(current: string, available: AnalyticsCityOption[], provinceScope: string): string {
+  if (!current) return ''
+  return available.some((item) => item.city === current && (!provinceScope || item.province === provinceScope)) ? current : ''
+}
+
+async function reconcileSelectedFilters(next: AnalyticsOptions): Promise<boolean> {
+  const nextRuleID = pickValidSelection(ruleID.value, next.rules)
+  const nextProvince = pickValidSelection(province.value, next.provinces)
+  const nextStatus = pickValidSelection(status.value, next.statuses)
+  const nextCity = pickValidCitySelection(city.value, next.cities, citySelectionScope(nextProvince))
+
+  const changed =
+    nextRuleID !== ruleID.value ||
+    nextProvince !== province.value ||
+    nextStatus !== status.value ||
+    nextCity !== city.value
+  if (!changed) return false
+
+  suppressedOptionsReloads += 1
+  try {
+    ruleID.value = nextRuleID
+    province.value = nextProvince
+    city.value = nextCity
+    status.value = nextStatus
+    await nextTick()
+  } finally {
+    suppressedOptionsReloads -= 1
+  }
+  return true
+}
+
 async function loadOptions() {
+  const requestID = ++optionsRequestID
   optionsLoading.value = true
   try {
-    options.value = await fetchAnalyticsOptions({
-      window: windowText.value,
-      rule_id: ruleID.value,
-      province: province.value,
-      city: city.value,
-      status: status.value,
-      src_ip: srcIP.value,
-    })
+    // Selected filters can only collapse toward empty, so a few passes reach a stable query quickly.
+    for (let pass = 0; pass < 5; pass += 1) {
+      const next = await fetchAnalyticsOptions({
+        window: windowText.value,
+        rule_id: ruleID.value,
+        province: province.value,
+        city: city.value,
+        status: status.value,
+        src_ip: optionsSrcIP.value ?? undefined,
+      })
+      if (requestID !== optionsRequestID) return
+      options.value = next
+      if (!(await reconcileSelectedFilters(next))) {
+        return
+      }
+    }
   } finally {
-    optionsLoading.value = false
+    if (requestID === optionsRequestID) {
+      optionsLoading.value = false
+    }
   }
 }
 
-watch(province, () => {
-  const available = new Set(filteredCities.value.map((item) => item.city))
-  if (city.value && !available.has(city.value)) {
-    city.value = ''
+watch(city, (next, prev) => {
+  if (!next) {
+    citySelectionProvince.value = ''
+    return
+  }
+  if (next !== prev) {
+    citySelectionProvince.value = province.value
   }
 })
 
-watch(windowText, async () => {
-  await loadOptions()
+watch(province, (next) => {
+  if (next && city.value) {
+    citySelectionProvince.value = next
+  }
 })
+
+watch([province, filteredCities], () => {
+  if (city.value && !pickValidCitySelection(city.value, filteredCities.value, citySelectionScope())) {
+    city.value = ''
+    citySelectionProvince.value = ''
+  }
+})
+
+watch([windowText, ruleID, province, city, status, optionsSrcIP], () => {
+  if (suppressedOptionsReloads > 0) return
+  void loadOptions()
+}, { immediate: true })
 
 async function search() {
   try {
@@ -106,8 +212,6 @@ async function search() {
     loading.value = false
   }
 }
-
-void loadOptions()
 </script>
 
 <template>

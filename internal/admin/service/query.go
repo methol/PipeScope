@@ -3,8 +3,10 @@ package service
 import "time"
 
 const (
-	MetricConn  = "conn"
-	MetricBytes = "bytes"
+	MetricConn       = "conn"
+	MetricBytes      = "bytes"
+	DefaultListLimit = 100
+	MaxListLimit     = 10000
 )
 
 type MapQuery struct {

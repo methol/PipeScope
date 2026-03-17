@@ -11,6 +11,27 @@ import (
 	sqlitestore "pipescope/internal/store/sqlite"
 )
 
+func TestClampListLimit(t *testing.T) {
+	tests := []struct {
+		name  string
+		input int
+		want  int
+	}{
+		{name: "falls back for zero", input: 0, want: 100},
+		{name: "falls back for negative", input: -1, want: 100},
+		{name: "keeps allowed values", input: 1000, want: 1000},
+		{name: "clamps oversized values", input: 10001, want: 10000},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := clampListLimit(tc.input); got != tc.want {
+				t.Fatalf("clampListLimit(%d)=%d want=%d", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestChinaMapAggregation(t *testing.T) {
 	db := openTempDB(t)
 	store := sqlitestore.New(db)

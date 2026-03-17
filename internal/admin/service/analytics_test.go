@@ -86,6 +86,46 @@ func TestAnalyticsOptions(t *testing.T) {
 	}
 }
 
+func TestAnalyticsOptionsTracksCrossFiltersInSQLite(t *testing.T) {
+	db := openTempDB(t)
+	store := sqlitestore.New(db)
+	if err := store.InitSchema(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	nowMS := now.UnixMilli()
+	seedConnEventWithStatus(t, db, seedEventWithStatus{seedEvent: seedEvent{RuleID: "r1", SrcIP: "10.0.0.8", Province: "广东", City: "深圳", TotalBytes: 100, StartTS: nowMS - int64((5*time.Minute)/time.Millisecond)}, Status: "ok", DurationMS: 20})
+	seedConnEventWithStatus(t, db, seedEventWithStatus{seedEvent: seedEvent{RuleID: "r1", SrcIP: "10.0.0.9", Province: "广东", City: "珠海", TotalBytes: 80, StartTS: nowMS - int64((4*time.Minute)/time.Millisecond)}, Status: "err", DurationMS: 60})
+	seedConnEventWithStatus(t, db, seedEventWithStatus{seedEvent: seedEvent{RuleID: "r2", SrcIP: "10.0.0.10", Province: "浙江", City: "杭州", TotalBytes: 200, StartTS: nowMS - int64((3*time.Minute)/time.Millisecond)}, Status: "ok", DurationMS: 40})
+
+	svc := New(db)
+	svc.SetNowFunc(func() time.Time { return now })
+
+	res, err := svc.AnalyticsOptions(context.Background(), AnalyticsOptionsQuery{
+		Window:   15 * time.Minute,
+		Province: "广东",
+		Status:   "err",
+		SrcIP:    "10.0.0.9",
+	})
+	if err != nil {
+		t.Fatalf("AnalyticsOptions with cross filters: %v", err)
+	}
+
+	if len(res.Rules) != 1 || res.Rules[0] != "r1" {
+		t.Fatalf("unexpected rules: %+v", res.Rules)
+	}
+	if len(res.Provinces) != 1 || res.Provinces[0] != "广东" {
+		t.Fatalf("unexpected provinces: %+v", res.Provinces)
+	}
+	if len(res.Cities) != 1 || res.Cities[0].Province != "广东" || res.Cities[0].City != "珠海" {
+		t.Fatalf("unexpected cities: %+v", res.Cities)
+	}
+	if len(res.Statuses) != 1 || res.Statuses[0] != "err" {
+		t.Fatalf("unexpected statuses: %+v", res.Statuses)
+	}
+}
+
 func TestAnalyticsFilters(t *testing.T) {
 	db := openTempDB(t)
 	store := sqlitestore.New(db)

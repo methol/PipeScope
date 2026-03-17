@@ -72,7 +72,7 @@ onUnmounted(() => {
           <select v-model="limit">
             <option value="100">100</option>
             <option value="1000">1000</option>
-            <option value="all">all</option>
+            <option value="10000">10000</option>
           </select>
         </label>
       </div>

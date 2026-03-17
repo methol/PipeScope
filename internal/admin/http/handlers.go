@@ -43,7 +43,7 @@ func (h *handlers) handleMapChina(w nethttp.ResponseWriter, r *nethttp.Request) 
 	points, err := h.svc.ChinaMap(ctx, service.MapQuery{
 		Window: parseWindow(r.URL.Query().Get("window"), 15*time.Minute),
 		Metric: parseMetric(r.URL.Query().Get("metric")),
-		Limit:  parseBoundedInt(r.URL.Query().Get("limit"), 100, 1, 1000),
+		Limit:  parseBoundedInt(r.URL.Query().Get("limit"), service.DefaultListLimit, 1, service.MaxListLimit),
 		RuleID: r.URL.Query().Get("rule_id"),
 		Status: r.URL.Query().Get("status"),
 	})
@@ -246,11 +246,7 @@ func parseBoundedInt(raw string, fallback int, min int, max int) int {
 }
 
 func parseSessionsLimit(raw string) int {
-	raw = strings.TrimSpace(strings.ToLower(raw))
-	if raw == "all" {
-		return -1
-	}
-	return parseBoundedInt(raw, 100, 1, 1000)
+	return parseBoundedInt(raw, service.DefaultListLimit, 1, service.MaxListLimit)
 }
 
 func (h *handlers) queryContext(parent context.Context) (context.Context, context.CancelFunc) {

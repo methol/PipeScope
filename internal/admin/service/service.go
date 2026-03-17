@@ -6,6 +6,16 @@ import (
 	"time"
 )
 
+func clampListLimit(limit int) int {
+	if limit <= 0 {
+		return DefaultListLimit
+	}
+	if limit > MaxListLimit {
+		return MaxListLimit
+	}
+	return limit
+}
+
 type Service struct {
 	db  *sql.DB
 	now func() time.Time
@@ -30,10 +40,7 @@ func (s *Service) ChinaMap(ctx context.Context, q MapQuery) ([]MapPoint, error) 
 		metricExpr = "COALESCE(SUM(total_bytes), 0)"
 	}
 
-	limit := q.Limit
-	if limit <= 0 {
-		limit = 100
-	}
+	limit := clampListLimit(q.Limit)
 
 	rows, err := s.db.QueryContext(ctx, `
 SELECT COALESCE(NULLIF(adcode, ''), 'unknown') AS adcode, province, city, MAX(lat) AS lat, MAX(lng) AS lng, `+metricExpr+` AS v
@@ -86,10 +93,7 @@ ORDER BY total_bytes DESC
 }
 
 func (s *Service) Sessions(ctx context.Context, q SessionsQuery) ([]SessionItem, error) {
-	limit := q.Limit
-	if limit == 0 {
-		limit = 100
-	}
+	limit := clampListLimit(q.Limit)
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, rule_id, src_addr, dst_addr, status, up_bytes, down_bytes, total_bytes,
        start_ts, end_ts, duration_ms, country, province, city, adcode, blocked_reason

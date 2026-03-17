@@ -125,6 +125,324 @@ describe('AnalyticsPage', () => {
     expect(calls.some((url) => url.includes('/api/analytics?') && url.includes('src_ip=10.0.0.8'))).toBe(true)
   })
 
+  it('refreshes linked options when src_ip changes and carries the filter into the options query', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input)
+        if (url.includes('/api/analytics/options?')) {
+          const search = new URL(url, 'http://localhost').searchParams
+          const srcIP = search.get('src_ip') || ''
+          return {
+            ok: true,
+            status: 200,
+            json: async () =>
+              srcIP === '10.0.0.8'
+                ? {
+                    rules: ['r1'],
+                    provinces: ['广东'],
+                    cities: [{ province: '广东', city: '深圳' }],
+                    statuses: ['ok'],
+                  }
+                : {
+                    rules: ['r1', 'r2'],
+                    provinces: ['广东', '浙江'],
+                    cities: [
+                      { province: '广东', city: '深圳' },
+                      { province: '浙江', city: '杭州' },
+                    ],
+                    statuses: ['ok', 'err'],
+                  },
+          }
+        }
+        if (!url.includes('/api/analytics?')) throw new Error('unexpected')
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            overview: {
+              conn_count: 0,
+              total_bytes: 0,
+              avg_duration_ms: 0,
+              active_rules: 0,
+              active_cities: 0,
+            },
+            top_cities: [],
+            top_rules: [],
+          }),
+        }
+      }),
+    )
+
+    const wrapper = mount(AnalyticsPage)
+    await flushPage()
+
+    const selects = wrapper.findAll('select')
+    expect(selects[1].findAll('option').map((o) => o.text())).toEqual(['全部', 'r1', 'r2'])
+
+    await wrapper.find('input').setValue('10.0.0.8')
+    await flushPage()
+
+    const calls = (fetch as ReturnType<typeof vi.fn>).mock.calls.map((x) => String(x[0]))
+    expect(calls.some((url) => url.includes('/api/analytics/options?') && url.includes('src_ip=10.0.0.8'))).toBe(true)
+    expect(wrapper.findAll('select')[1].findAll('option').map((o) => o.text())).toEqual(['全部', 'r1'])
+  })
+
+  it('clears invalid rule province status and city after src_ip narrows the options', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input)
+        if (url.includes('/api/analytics/options?')) {
+          const search = new URL(url, 'http://localhost').searchParams
+          const srcIP = search.get('src_ip') || ''
+          const hasStaleFilters = Boolean(search.get('rule_id') || search.get('province') || search.get('status') || search.get('city'))
+          return {
+            ok: true,
+            status: 200,
+            json: async () =>
+              srcIP === '10.0.0.9'
+                ? hasStaleFilters
+                  ? {
+                      rules: [],
+                      provinces: [],
+                      cities: [],
+                      statuses: [],
+                    }
+                  : {
+                      rules: ['r2'],
+                      provinces: ['浙江'],
+                      cities: [{ province: '浙江', city: '杭州' }],
+                      statuses: ['err'],
+                    }
+                : {
+                    rules: ['r1', 'r2'],
+                    provinces: ['广东', '浙江'],
+                    cities: [
+                      { province: '广东', city: '深圳' },
+                      { province: '浙江', city: '杭州' },
+                    ],
+                    statuses: ['ok', 'err'],
+                  },
+          }
+        }
+        if (!url.includes('/api/analytics?')) throw new Error('unexpected')
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            overview: {
+              conn_count: 0,
+              total_bytes: 0,
+              avg_duration_ms: 0,
+              active_rules: 0,
+              active_cities: 0,
+            },
+            top_cities: [],
+            top_rules: [],
+          }),
+        }
+      }),
+    )
+
+    const wrapper = mount(AnalyticsPage)
+    await flushPage()
+
+    const selects = wrapper.findAll('select')
+    const ruleSelect = selects[1]
+    const provinceSelect = selects[2]
+    const citySelect = selects[3]
+    const statusSelect = selects[4]
+    const srcIPInput = wrapper.find('input')
+
+    await ruleSelect.setValue('r1')
+    await provinceSelect.setValue('广东')
+    await citySelect.setValue('深圳')
+    await statusSelect.setValue('ok')
+    await flushPage()
+
+    await srcIPInput.setValue('10.0.0.9')
+    await flushPage()
+
+    expect((ruleSelect.element as HTMLSelectElement).value).toBe('')
+    expect((provinceSelect.element as HTMLSelectElement).value).toBe('')
+    expect((citySelect.element as HTMLSelectElement).value).toBe('')
+    expect((statusSelect.element as HTMLSelectElement).value).toBe('')
+    expect(ruleSelect.findAll('option').map((o) => o.text())).toEqual(['全部', 'r2'])
+    expect(provinceSelect.findAll('option').map((o) => o.text())).toEqual(['全部', '浙江'])
+    expect(citySelect.findAll('option').map((o) => o.text())).toEqual(['全部', '杭州'])
+    expect(statusSelect.findAll('option').map((o) => o.text())).toEqual(['全部', 'err'])
+
+    await wrapper.find('button.btn').trigger('click')
+    await flushPage()
+
+    const analyticsCalls = (fetch as ReturnType<typeof vi.fn>).mock.calls
+      .map((x) => String(x[0]))
+      .filter((url) => url.includes('/api/analytics?'))
+    expect(analyticsCalls).toHaveLength(1)
+    expect(analyticsCalls[0]).toContain('src_ip=10.0.0.9')
+    expect(analyticsCalls[0]).not.toContain('rule_id=r1')
+    expect(analyticsCalls[0]).not.toContain('province=%E5%B9%BF%E4%B8%9C')
+    expect(analyticsCalls[0]).not.toContain('city=%E6%B7%B1%E5%9C%B3')
+    expect(analyticsCalls[0]).not.toContain('status=ok')
+  })
+
+  it('does not clear selected filters while src_ip input is still incomplete', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input)
+        if (url.includes('/api/analytics/options?')) {
+          const search = new URL(url, 'http://localhost').searchParams
+          const srcIP = search.get('src_ip') || ''
+          return {
+            ok: true,
+            status: 200,
+            json: async () =>
+              srcIP === '10.0.'
+                ? {
+                    rules: [],
+                    provinces: [],
+                    cities: [],
+                    statuses: [],
+                  }
+                : {
+                    rules: ['r1', 'r2'],
+                    provinces: ['广东', '浙江'],
+                    cities: [
+                      { province: '广东', city: '深圳' },
+                      { province: '浙江', city: '杭州' },
+                    ],
+                    statuses: ['ok', 'err'],
+                  },
+          }
+        }
+        if (!url.includes('/api/analytics?')) throw new Error('unexpected')
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            overview: {
+              conn_count: 0,
+              total_bytes: 0,
+              avg_duration_ms: 0,
+              active_rules: 0,
+              active_cities: 0,
+            },
+            top_cities: [],
+            top_rules: [],
+          }),
+        }
+      }),
+    )
+
+    const wrapper = mount(AnalyticsPage)
+    await flushPage()
+
+    const selects = wrapper.findAll('select')
+    const ruleSelect = selects[1]
+    const provinceSelect = selects[2]
+    const citySelect = selects[3]
+    const statusSelect = selects[4]
+
+    await ruleSelect.setValue('r1')
+    await provinceSelect.setValue('广东')
+    await citySelect.setValue('深圳')
+    await statusSelect.setValue('ok')
+    await flushPage()
+
+    await wrapper.find('input').setValue('10.0.')
+    await flushPage()
+
+    expect((ruleSelect.element as HTMLSelectElement).value).toBe('r1')
+    expect((provinceSelect.element as HTMLSelectElement).value).toBe('广东')
+    expect((citySelect.element as HTMLSelectElement).value).toBe('深圳')
+    expect((statusSelect.element as HTMLSelectElement).value).toBe('ok')
+
+    const optionCalls = (fetch as ReturnType<typeof vi.fn>).mock.calls
+      .map((x) => String(x[0]))
+      .filter((url) => url.includes('/api/analytics/options?'))
+    expect(optionCalls.some((url) => url.includes('src_ip=10.0.'))).toBe(false)
+  })
+
+  it('clears stale city when province collapses but the same city name still exists in another province', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input)
+        if (url.includes('/api/analytics/options?')) {
+          const search = new URL(url, 'http://localhost').searchParams
+          const srcIP = search.get('src_ip') || ''
+          return {
+            ok: true,
+            status: 200,
+            json: async () =>
+              srcIP === '10.0.0.9'
+                ? {
+                    rules: ['r1'],
+                    provinces: ['河北'],
+                    cities: [{ province: '河北', city: '长安区' }],
+                    statuses: ['ok'],
+                  }
+                : {
+                    rules: ['r1'],
+                    provinces: ['广东', '河北'],
+                    cities: [
+                      { province: '广东', city: '长安区' },
+                      { province: '河北', city: '长安区' },
+                    ],
+                    statuses: ['ok'],
+                  },
+          }
+        }
+        if (!url.includes('/api/analytics?')) throw new Error('unexpected')
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            overview: {
+              conn_count: 0,
+              total_bytes: 0,
+              avg_duration_ms: 0,
+              active_rules: 0,
+              active_cities: 0,
+            },
+            top_cities: [],
+            top_rules: [],
+          }),
+        }
+      }),
+    )
+
+    const wrapper = mount(AnalyticsPage)
+    await flushPage()
+
+    const selects = wrapper.findAll('select')
+    const provinceSelect = selects[2]
+    const citySelect = selects[3]
+
+    await provinceSelect.setValue('广东')
+    await citySelect.setValue('长安区')
+    await flushPage()
+
+    await wrapper.find('input').setValue('10.0.0.9')
+    await flushPage()
+
+    expect((provinceSelect.element as HTMLSelectElement).value).toBe('')
+    expect((citySelect.element as HTMLSelectElement).value).toBe('')
+
+    await wrapper.find('button.btn').trigger('click')
+    await flushPage()
+
+    const analyticsCalls = (fetch as ReturnType<typeof vi.fn>).mock.calls
+      .map((x) => String(x[0]))
+      .filter((url) => url.includes('/api/analytics?'))
+    expect(analyticsCalls).toHaveLength(1)
+    expect(analyticsCalls[0]).toContain('src_ip=10.0.0.9')
+    expect(analyticsCalls[0]).not.toContain('province=')
+    expect(analyticsCalls[0]).not.toContain('city=%E9%95%BF%E5%AE%89%E5%8C%BA')
+  })
+
   it('filters city options by selected province', async () => {
     vi.stubGlobal(
       'fetch',

@@ -45,22 +45,22 @@ func TestSessionsEndpointClampsOversizedLimit(t *testing.T) {
 	svc := &capturingService{}
 	srv := NewServer(svc, 50*time.Millisecond)
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(nethttp.MethodGet, "/api/sessions?limit=9999&offset=3", nil)
+	req := httptest.NewRequest(nethttp.MethodGet, "/api/sessions?limit=10001&offset=3", nil)
 
 	srv.Handler().ServeHTTP(rr, req)
 
 	if rr.Code != nethttp.StatusOK {
 		t.Fatalf("code=%d", rr.Code)
 	}
-	if svc.sessionsQuery.Limit != 1000 {
-		t.Fatalf("Limit=%d want=1000", svc.sessionsQuery.Limit)
+	if svc.sessionsQuery.Limit != 10000 {
+		t.Fatalf("Limit=%d want=10000", svc.sessionsQuery.Limit)
 	}
 	if svc.sessionsQuery.Offset != 3 {
 		t.Fatalf("Offset=%d want=3", svc.sessionsQuery.Offset)
 	}
 }
 
-func TestSessionsEndpointSupportsAllLimit(t *testing.T) {
+func TestSessionsEndpointFallsBackForAllLimit(t *testing.T) {
 	svc := &capturingService{}
 	srv := NewServer(svc, 50*time.Millisecond)
 	rr := httptest.NewRecorder()
@@ -71,8 +71,8 @@ func TestSessionsEndpointSupportsAllLimit(t *testing.T) {
 	if rr.Code != nethttp.StatusOK {
 		t.Fatalf("code=%d", rr.Code)
 	}
-	if svc.sessionsQuery.Limit != -1 {
-		t.Fatalf("Limit=%d want=-1", svc.sessionsQuery.Limit)
+	if svc.sessionsQuery.Limit != 100 {
+		t.Fatalf("Limit=%d want=100", svc.sessionsQuery.Limit)
 	}
 }
 
@@ -85,6 +85,7 @@ type fakeService struct{}
 
 type capturingService struct {
 	fakeService
+	mapQuery              service.MapQuery
 	sessionsQuery         service.SessionsQuery
 	analyticsQuery        service.AnalyticsQuery
 	analyticsOptionsQuery service.AnalyticsOptionsQuery
@@ -102,9 +103,30 @@ func (fakeService) Sessions(context.Context, service.SessionsQuery) ([]service.S
 	return []service.SessionItem{}, nil
 }
 
+func (c *capturingService) ChinaMap(_ context.Context, q service.MapQuery) ([]service.MapPoint, error) {
+	c.mapQuery = q
+	return []service.MapPoint{}, nil
+}
+
 func (c *capturingService) Sessions(_ context.Context, q service.SessionsQuery) ([]service.SessionItem, error) {
 	c.sessionsQuery = q
 	return []service.SessionItem{}, nil
+}
+
+func TestMapChinaEndpointClampsOversizedLimit(t *testing.T) {
+	svc := &capturingService{}
+	srv := NewServer(svc, 50*time.Millisecond)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(nethttp.MethodGet, "/api/map/china?limit=10001", nil)
+
+	srv.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != nethttp.StatusOK {
+		t.Fatalf("code=%d", rr.Code)
+	}
+	if svc.mapQuery.Limit != 10000 {
+		t.Fatalf("Limit=%d want=10000", svc.mapQuery.Limit)
+	}
 }
 
 func (c *capturingService) Analytics(_ context.Context, q service.AnalyticsQuery) (service.AnalyticsResult, error) {

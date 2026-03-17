@@ -25,19 +25,10 @@ export function normalizeAdcode6(adcode?: string) {
   return ''
 }
 
-function adcodePrefixes(rawAdcode?: string) {
-  const raw = String(rawAdcode || '').trim()
-  if (!/^\d+$/.test(raw)) return { adcode4: '', adcode2: '' }
-
-  const adcode4 = raw.length >= 4 ? raw.slice(0, 4) : ''
-  const adcode2 = raw.length >= 2 ? raw.slice(0, 2) : ''
-
-  return { adcode4, adcode2 }
-}
-
 export function cityKey(item: CityLike) {
-  const { adcode4 } = adcodePrefixes(item.adcode)
-  return adcode4
+  const raw = String(item.adcode || '').trim()
+  if (!/^\d+$/.test(raw) || raw.length < 4) return ''
+  return normalizeAdcode6(raw)
 }
 
 function isDirectAdminCounty(adcode?: string) {
