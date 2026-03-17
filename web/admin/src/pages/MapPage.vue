@@ -3,7 +3,7 @@ import * as echarts from 'echarts'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { fetchChinaMap, fetchAnalyticsOptions, type MapPoint, type AnalyticsOptions } from '../api/client'
 import { formatBytes } from '../utils/format'
-import { createCityJoinKeyResolver, normalizeCityGeoFeatures } from './mapCity'
+import { createCityJoinKeyResolver, extractProvinceBoundarySegments, normalizeCityGeoFeatures } from './mapCity'
 
 const CHINA_MAP_NAME = 'china-cities'
 const CHINA_GEOJSON_URL = '/maps/china-cities.geojson'
@@ -25,6 +25,7 @@ const options = ref<AnalyticsOptions>({
 })
 const resolveCityJoinKey = ref<(item: MapPoint) => string>((item) => String(item.adcode || '').trim())
 const mapCityNameByKey = ref<Map<string, string>>(new Map())
+const provinceBoundarySegments = ref<number[][][]>([])
 
 const chartEl = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
@@ -58,6 +59,7 @@ async function ensureChinaMap() {
     const geoJSON = await rsp.json()
     geoJSON.features = normalizeCityGeoFeatures(Array.isArray(geoJSON?.features) ? geoJSON.features : [])
     resolveCityJoinKey.value = createCityJoinKeyResolver(geoJSON.features)
+    provinceBoundarySegments.value = extractProvinceBoundarySegments(geoJSON.features)
     mapCityNameByKey.value = new Map(
       geoJSON.features.map((feature: any) => {
         const p = feature?.properties || {}
@@ -115,12 +117,25 @@ function render() {
     ...mapCityNameByKey.value.entries(),
     ...cityData.map((it) => [it.name, it.cityName] as const),
   ])
+  const provinceBoundaryData = provinceBoundarySegments.value.map((coords) => ({ coords }))
   const values = cityData.map((item) => item.value)
   const min = values.length > 0 ? Math.min(...values) : 0
   const max = values.length > 0 ? Math.max(...values) : 1
 
   chart.setOption({
     backgroundColor: 'transparent',
+    geo: {
+      map: CHINA_MAP_NAME,
+      roam: true,
+      silent: true,
+      itemStyle: {
+        areaColor: 'transparent',
+        borderColor: 'transparent',
+      },
+      emphasis: {
+        disabled: true,
+      },
+    },
     tooltip: {
       trigger: 'item',
       formatter: (params: { data?: any; name?: string; value?: any }) => {
@@ -148,13 +163,17 @@ function render() {
         name: title.value,
         type: 'map',
         map: CHINA_MAP_NAME,
+        geoIndex: 0,
         nameProperty: 'city_key',
-        roam: true,
         data: cityData,
         emphasis: {
           label: {
             show: true,
-            formatter: (x: { data?: any; name?: string }) => String(x.data?.cityName || x.name || '').split('-').pop(),
+            formatter: (x: { data?: any; name?: string }) => {
+              const key = String(x.data?.name || x.name || '')
+              const cityName = String(x.data?.cityName || cityNameByKey.get(key) || key || '').trim()
+              return cityName.split('-').pop()
+            },
           },
           itemStyle: { areaColor: '#8db5f2' },
         },
@@ -162,6 +181,19 @@ function render() {
           areaColor: '#f4f8ff',
           borderColor: '#99afc9',
           borderWidth: 0.7,
+        },
+      },
+      {
+        name: '省界',
+        type: 'lines',
+        coordinateSystem: 'geo',
+        silent: true,
+        zlevel: 1,
+        data: provinceBoundaryData,
+        lineStyle: {
+          color: '#4d627d',
+          width: 2.2,
+          opacity: 0.95,
         },
       },
     ],

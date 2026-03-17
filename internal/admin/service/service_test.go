@@ -11,6 +11,27 @@ import (
 	sqlitestore "pipescope/internal/store/sqlite"
 )
 
+func TestClampListLimit(t *testing.T) {
+	tests := []struct {
+		name  string
+		input int
+		want  int
+	}{
+		{name: "falls back for zero", input: 0, want: 100},
+		{name: "falls back for negative", input: -1, want: 100},
+		{name: "keeps allowed values", input: 1000, want: 1000},
+		{name: "clamps oversized values", input: 10001, want: 10000},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := clampListLimit(tc.input); got != tc.want {
+				t.Fatalf("clampListLimit(%d)=%d want=%d", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestChinaMapAggregation(t *testing.T) {
 	db := openTempDB(t)
 	store := sqlitestore.New(db)
@@ -57,6 +78,7 @@ func TestChinaMapAggregation(t *testing.T) {
 
 type seedEvent struct {
 	RuleID     string
+	SrcIP      string
 	Country    string
 	Adcode     string
 	City       string
@@ -72,11 +94,18 @@ INSERT INTO conn_events(
   rule_id, listen_port, src_addr, src_ip, dst_addr, dst_host, dst_port,
   start_ts, end_ts, duration_ms, up_bytes, down_bytes, total_bytes,
   status, err_msg, country, province, city, adcode, lat, lng
-) VALUES (?, 10001, '1.1.1.1:1', '1.1.1.1', '2.2.2.2:2', '2.2.2.2', 2, ?, ?, 0, 1, 1, ?, 'ok', '', ?, ?, ?, ?, 22.5, 114.0)
-`, e.RuleID, e.StartTS, e.StartTS+1, e.TotalBytes, e.Country, e.Province, e.City, e.Adcode)
+) VALUES (?, 10001, ?, ?, '2.2.2.2:2', '2.2.2.2', 2, ?, ?, 0, 1, 1, ?, 'ok', '', ?, ?, ?, ?, 22.5, 114.0)
+`, e.RuleID, firstNonEmpty(e.SrcIP, "1.1.1.1")+":1", firstNonEmpty(e.SrcIP, "1.1.1.1"), e.StartTS, e.StartTS+1, e.TotalBytes, e.Country, e.Province, e.City, e.Adcode)
 	if err != nil {
 		t.Fatalf("seed conn_events: %v", err)
 	}
+}
+
+func firstNonEmpty(value string, fallback string) string {
+	if value != "" {
+		return value
+	}
+	return fallback
 }
 
 func TestProvinceSummaryAggregation(t *testing.T) {

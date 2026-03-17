@@ -3,8 +3,10 @@ package service
 import "time"
 
 const (
-	MetricConn  = "conn"
-	MetricBytes = "bytes"
+	MetricConn       = "conn"
+	MetricBytes      = "bytes"
+	DefaultListLimit = 100
+	MaxListLimit     = 10000
 )
 
 type MapQuery struct {
@@ -36,6 +38,7 @@ type AnalyticsQuery struct {
 	Province string
 	City     string
 	Status   string
+	SrcIP    string
 	TopN     int
 }
 
@@ -45,6 +48,7 @@ type AnalyticsOptionsQuery struct {
 	Province string
 	City     string
 	Status   string
+	SrcIP    string
 }
 
 type ProvinceQuery struct {

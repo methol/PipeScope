@@ -6,6 +6,16 @@ import (
 	"time"
 )
 
+func clampListLimit(limit int) int {
+	if limit <= 0 {
+		return DefaultListLimit
+	}
+	if limit > MaxListLimit {
+		return MaxListLimit
+	}
+	return limit
+}
+
 type Service struct {
 	db  *sql.DB
 	now func() time.Time
@@ -30,10 +40,7 @@ func (s *Service) ChinaMap(ctx context.Context, q MapQuery) ([]MapPoint, error) 
 		metricExpr = "COALESCE(SUM(total_bytes), 0)"
 	}
 
-	limit := q.Limit
-	if limit <= 0 {
-		limit = 100
-	}
+	limit := clampListLimit(q.Limit)
 
 	rows, err := s.db.QueryContext(ctx, `
 SELECT COALESCE(NULLIF(adcode, ''), 'unknown') AS adcode, province, city, MAX(lat) AS lat, MAX(lng) AS lng, `+metricExpr+` AS v
@@ -86,10 +93,7 @@ ORDER BY total_bytes DESC
 }
 
 func (s *Service) Sessions(ctx context.Context, q SessionsQuery) ([]SessionItem, error) {
-	limit := q.Limit
-	if limit <= 0 {
-		limit = 100
-	}
+	limit := clampListLimit(q.Limit)
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, rule_id, src_addr, dst_addr, status, up_bytes, down_bytes, total_bytes,
        start_ts, end_ts, duration_ms, country, province, city, adcode, blocked_reason
@@ -238,6 +242,7 @@ func (s *Service) AnalyticsOptions(ctx context.Context, q AnalyticsOptionsQuery)
 	province := q.Province
 	city := q.City
 	status := q.Status
+	srcIP := q.SrcIP
 
 	ruleRows, err := s.db.QueryContext(ctx, `
 SELECT DISTINCT COALESCE(NULLIF(rule_id, ''), 'unknown') AS rule
@@ -246,8 +251,9 @@ WHERE start_ts >= ?
   AND (? = '' OR province LIKE '%' || ? || '%')
   AND (? = '' OR city LIKE '%' || ? || '%')
   AND (? = '' OR status = ?)
+  AND (? = '' OR src_ip = ?)
 ORDER BY rule
-`, windowStart, province, province, city, city, status, status)
+`, windowStart, province, province, city, city, status, status, srcIP, srcIP)
 	if err != nil {
 		return result, err
 	}
@@ -270,8 +276,9 @@ WHERE start_ts >= ?
   AND (? = '' OR rule_id = ?)
   AND (? = '' OR city LIKE '%' || ? || '%')
   AND (? = '' OR status = ?)
+  AND (? = '' OR src_ip = ?)
 ORDER BY province
-`, windowStart, ruleID, ruleID, city, city, status, status)
+`, windowStart, ruleID, ruleID, city, city, status, status, srcIP, srcIP)
 	if err != nil {
 		return result, err
 	}
@@ -296,8 +303,9 @@ WHERE start_ts >= ?
   AND (? = '' OR rule_id = ?)
   AND (? = '' OR COALESCE(NULLIF(province, ''), '未知') = ?)
   AND (? = '' OR status = ?)
+  AND (? = '' OR src_ip = ?)
 ORDER BY province, city
-`, windowStart, ruleID, ruleID, province, province, status, status)
+`, windowStart, ruleID, ruleID, province, province, status, status, srcIP, srcIP)
 	if err != nil {
 		return result, err
 	}
@@ -320,8 +328,9 @@ WHERE start_ts >= ?
   AND (? = '' OR rule_id = ?)
   AND (? = '' OR province LIKE '%' || ? || '%')
   AND (? = '' OR city LIKE '%' || ? || '%')
+  AND (? = '' OR src_ip = ?)
 ORDER BY status
-`, windowStart, ruleID, ruleID, province, province, city, city)
+`, windowStart, ruleID, ruleID, province, province, city, city, srcIP, srcIP)
 	if err != nil {
 		return result, err
 	}
@@ -347,6 +356,7 @@ func (s *Service) Analytics(ctx context.Context, q AnalyticsQuery) (AnalyticsRes
 	province := q.Province
 	city := q.City
 	status := q.Status
+	srcIP := q.SrcIP
 	topN := q.TopN
 	if topN <= 0 {
 		topN = 10
@@ -365,7 +375,8 @@ WHERE start_ts >= ?
   AND (? = '' OR province LIKE '%' || ? || '%')
   AND (? = '' OR city LIKE '%' || ? || '%')
   AND (? = '' OR status = ?)
-`, windowStart, ruleID, ruleID, province, province, city, city, status, status).Scan(
+  AND (? = '' OR src_ip = ?)
+`, windowStart, ruleID, ruleID, province, province, city, city, status, status, srcIP, srcIP).Scan(
 		&result.Overview.ConnCount,
 		&result.Overview.TotalBytes,
 		&result.Overview.AvgDurationMS,
@@ -390,10 +401,11 @@ WHERE start_ts >= ?
   AND (? = '' OR province LIKE '%' || ? || '%')
   AND (? = '' OR city LIKE '%' || ? || '%')
   AND (? = '' OR status = ?)
+  AND (? = '' OR src_ip = ?)
 GROUP BY COALESCE(NULLIF(province, ''), '未知'), COALESCE(NULLIF(city, ''), '')
 ORDER BY total_bytes DESC, conn_count DESC
 LIMIT ?
-`, windowStart, ruleID, ruleID, province, province, city, city, status, status, topN)
+`, windowStart, ruleID, ruleID, province, province, city, city, status, status, srcIP, srcIP, topN)
 	if err != nil {
 		return result, err
 	}
@@ -421,10 +433,11 @@ WHERE start_ts >= ?
   AND (? = '' OR province LIKE '%' || ? || '%')
   AND (? = '' OR city LIKE '%' || ? || '%')
   AND (? = '' OR status = ?)
+  AND (? = '' OR src_ip = ?)
 GROUP BY COALESCE(NULLIF(rule_id, ''), 'unknown')
 ORDER BY total_bytes DESC, conn_count DESC
 LIMIT ?
-`, windowStart, ruleID, ruleID, province, province, city, city, status, status, topN)
+`, windowStart, ruleID, ruleID, province, province, city, city, status, status, srcIP, srcIP, topN)
 	if err != nil {
 		return result, err
 	}

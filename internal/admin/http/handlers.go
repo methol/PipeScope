@@ -43,7 +43,7 @@ func (h *handlers) handleMapChina(w nethttp.ResponseWriter, r *nethttp.Request) 
 	points, err := h.svc.ChinaMap(ctx, service.MapQuery{
 		Window: parseWindow(r.URL.Query().Get("window"), 15*time.Minute),
 		Metric: parseMetric(r.URL.Query().Get("metric")),
-		Limit:  parseBoundedInt(r.URL.Query().Get("limit"), 100, 1, 1000),
+		Limit:  parseBoundedInt(r.URL.Query().Get("limit"), service.DefaultListLimit, 1, service.MaxListLimit),
 		RuleID: r.URL.Query().Get("rule_id"),
 		Status: r.URL.Query().Get("status"),
 	})
@@ -102,7 +102,7 @@ func (h *handlers) handleSessions(w nethttp.ResponseWriter, r *nethttp.Request) 
 	points, err := h.svc.Sessions(ctx, service.SessionsQuery{
 		Window: parseWindow(r.URL.Query().Get("window"), 15*time.Minute),
 		RuleID: r.URL.Query().Get("rule_id"),
-		Limit:  parseBoundedInt(r.URL.Query().Get("limit"), 100, 1, 500),
+		Limit:  parseSessionsLimit(r.URL.Query().Get("limit")),
 		Offset: parseBoundedInt(r.URL.Query().Get("offset"), 0, 0, 1000000),
 	})
 	if err != nil {
@@ -148,6 +148,7 @@ func (h *handlers) handleAnalytics(w nethttp.ResponseWriter, r *nethttp.Request)
 		Province: r.URL.Query().Get("province"),
 		City:     r.URL.Query().Get("city"),
 		Status:   r.URL.Query().Get("status"),
+		SrcIP:    r.URL.Query().Get("src_ip"),
 		TopN:     parseBoundedInt(r.URL.Query().Get("top_n"), 10, 1, 1000),
 	})
 	if err != nil {
@@ -166,6 +167,7 @@ func (h *handlers) handleAnalyticsOptions(w nethttp.ResponseWriter, r *nethttp.R
 		Province: r.URL.Query().Get("province"),
 		City:     r.URL.Query().Get("city"),
 		Status:   r.URL.Query().Get("status"),
+		SrcIP:    r.URL.Query().Get("src_ip"),
 	})
 	if err != nil {
 		writeQueryError(w, err)
@@ -241,6 +243,10 @@ func parseBoundedInt(raw string, fallback int, min int, max int) int {
 		return max
 	}
 	return n
+}
+
+func parseSessionsLimit(raw string) int {
+	return parseBoundedInt(raw, service.DefaultListLimit, 1, service.MaxListLimit)
 }
 
 func (h *handlers) queryContext(parent context.Context) (context.Context, context.CancelFunc) {

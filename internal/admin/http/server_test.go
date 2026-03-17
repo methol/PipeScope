@@ -45,18 +45,34 @@ func TestSessionsEndpointClampsOversizedLimit(t *testing.T) {
 	svc := &capturingService{}
 	srv := NewServer(svc, 50*time.Millisecond)
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(nethttp.MethodGet, "/api/sessions?limit=9999&offset=3", nil)
+	req := httptest.NewRequest(nethttp.MethodGet, "/api/sessions?limit=10001&offset=3", nil)
 
 	srv.Handler().ServeHTTP(rr, req)
 
 	if rr.Code != nethttp.StatusOK {
 		t.Fatalf("code=%d", rr.Code)
 	}
-	if svc.sessionsQuery.Limit != 500 {
-		t.Fatalf("Limit=%d want=500", svc.sessionsQuery.Limit)
+	if svc.sessionsQuery.Limit != 10000 {
+		t.Fatalf("Limit=%d want=10000", svc.sessionsQuery.Limit)
 	}
 	if svc.sessionsQuery.Offset != 3 {
 		t.Fatalf("Offset=%d want=3", svc.sessionsQuery.Offset)
+	}
+}
+
+func TestSessionsEndpointFallsBackForAllLimit(t *testing.T) {
+	svc := &capturingService{}
+	srv := NewServer(svc, 50*time.Millisecond)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(nethttp.MethodGet, "/api/sessions?limit=all", nil)
+
+	srv.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != nethttp.StatusOK {
+		t.Fatalf("code=%d", rr.Code)
+	}
+	if svc.sessionsQuery.Limit != 100 {
+		t.Fatalf("Limit=%d want=100", svc.sessionsQuery.Limit)
 	}
 }
 
@@ -69,7 +85,10 @@ type fakeService struct{}
 
 type capturingService struct {
 	fakeService
-	sessionsQuery service.SessionsQuery
+	mapQuery              service.MapQuery
+	sessionsQuery         service.SessionsQuery
+	analyticsQuery        service.AnalyticsQuery
+	analyticsOptionsQuery service.AnalyticsOptionsQuery
 }
 
 func (fakeService) ChinaMap(context.Context, service.MapQuery) ([]service.MapPoint, error) {
@@ -84,9 +103,40 @@ func (fakeService) Sessions(context.Context, service.SessionsQuery) ([]service.S
 	return []service.SessionItem{}, nil
 }
 
+func (c *capturingService) ChinaMap(_ context.Context, q service.MapQuery) ([]service.MapPoint, error) {
+	c.mapQuery = q
+	return []service.MapPoint{}, nil
+}
+
 func (c *capturingService) Sessions(_ context.Context, q service.SessionsQuery) ([]service.SessionItem, error) {
 	c.sessionsQuery = q
 	return []service.SessionItem{}, nil
+}
+
+func TestMapChinaEndpointClampsOversizedLimit(t *testing.T) {
+	svc := &capturingService{}
+	srv := NewServer(svc, 50*time.Millisecond)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(nethttp.MethodGet, "/api/map/china?limit=10001", nil)
+
+	srv.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != nethttp.StatusOK {
+		t.Fatalf("code=%d", rr.Code)
+	}
+	if svc.mapQuery.Limit != 10000 {
+		t.Fatalf("Limit=%d want=10000", svc.mapQuery.Limit)
+	}
+}
+
+func (c *capturingService) Analytics(_ context.Context, q service.AnalyticsQuery) (service.AnalyticsResult, error) {
+	c.analyticsQuery = q
+	return service.AnalyticsResult{}, nil
+}
+
+func (c *capturingService) AnalyticsOptions(_ context.Context, q service.AnalyticsOptionsQuery) (service.AnalyticsOptions, error) {
+	c.analyticsOptionsQuery = q
+	return service.AnalyticsOptions{}, nil
 }
 
 func (fakeService) Overview(context.Context, time.Duration) (service.Overview, error) {
@@ -223,6 +273,38 @@ func TestSessionsEndpointClampsOversizedOffset(t *testing.T) {
 	}
 	if svc.sessionsQuery.Offset != 1000000 {
 		t.Fatalf("Offset=%d want=1000000", svc.sessionsQuery.Offset)
+	}
+}
+
+func TestAnalyticsEndpointPassesSrcIPFilter(t *testing.T) {
+	svc := &capturingService{}
+	srv := NewServer(svc, 50*time.Millisecond)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(nethttp.MethodGet, "/api/analytics?src_ip=10.0.0.8", nil)
+
+	srv.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != nethttp.StatusOK {
+		t.Fatalf("code=%d", rr.Code)
+	}
+	if svc.analyticsQuery.SrcIP != "10.0.0.8" {
+		t.Fatalf("SrcIP=%q want=10.0.0.8", svc.analyticsQuery.SrcIP)
+	}
+}
+
+func TestAnalyticsOptionsEndpointPassesSrcIPFilter(t *testing.T) {
+	svc := &capturingService{}
+	srv := NewServer(svc, 50*time.Millisecond)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(nethttp.MethodGet, "/api/analytics/options?src_ip=10.0.0.9", nil)
+
+	srv.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != nethttp.StatusOK {
+		t.Fatalf("code=%d", rr.Code)
+	}
+	if svc.analyticsOptionsQuery.SrcIP != "10.0.0.9" {
+		t.Fatalf("SrcIP=%q want=10.0.0.9", svc.analyticsOptionsQuery.SrcIP)
 	}
 }
 
