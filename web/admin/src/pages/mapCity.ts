@@ -58,6 +58,9 @@ export function normalizeCityGeoFeatures(features: any[]) {
 
     p.city_key = cityKey({ province: p.province, city: p.city, adcode: p.adcode })
     p.city_name = rawCity
+    // ECharts map region matching is safest with canonical `name` set explicitly.
+    // Keep it aligned with city_key to avoid runtime nameProperty drift/caching mismatch.
+    p.name = p.city_key
     feature.properties = p
     filteredFeatures.push(feature)
   }
