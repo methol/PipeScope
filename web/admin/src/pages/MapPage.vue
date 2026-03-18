@@ -126,8 +126,9 @@ function render() {
       roam: true,
       silent: true,
       itemStyle: {
-        areaColor: 'transparent',
-        borderColor: 'transparent',
+        areaColor: '#f4f8ff',
+        borderColor: '#99afc9',
+        borderWidth: 0.7,
       },
       emphasis: {
         disabled: true,
