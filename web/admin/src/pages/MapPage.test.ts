@@ -78,10 +78,15 @@ function stubFetch(options?: {
         }
       }
       if (url.includes('/api/map/china')) {
+        const metric = /[?&]metric=([^&]+)/.exec(url)?.[1] || 'conn'
+        const items = apiItems.map((item) => ({
+          ...item,
+          value: metric === 'bytes' ? item.value * 1024 : item.value,
+        }))
         return {
           ok: cityOK,
           status: cityOK ? 200 : 500,
-          json: async () => ({ items: apiItems }),
+          json: async () => ({ items }),
         }
       }
       throw new Error(`unexpected fetch url: ${url}`)
@@ -117,19 +122,22 @@ describe('MapPage', () => {
     expect(calls.some((call) => call.includes('/maps/china-cities.geojson'))).toBe(true)
     expect(calls.some((call) => call.includes('/api/map/china'))).toBe(true)
     expect(calls.some((call) => call.includes('metric=conn'))).toBe(true)
+    expect(calls.some((call) => call.includes('metric=bytes'))).toBe(true)
 
     wrapper.unmount()
   })
 
-  it('does not render inferred province boundary overlay', async () => {
+  it('renders inter-province boundary overlay as lines', async () => {
     const wrapper = mount(MapPage)
     await flushPage()
 
     expect(lastChartOption?.series?.filter((series: any) => series.type === 'map')).toHaveLength(1)
-    expect(lastChartOption?.series?.some((series: any) => series.type === 'lines')).toBe(false)
+    expect(lastChartOption?.series?.some((series: any) => series.type === 'lines')).toBe(true)
 
     const tooltip = String(lastChartOption.tooltip.formatter({ name: '440300' }))
     expect(tooltip).toContain('深圳市')
+    expect(tooltip).toContain('连接数: 0')
+    expect(tooltip).toContain('流量: 0 B')
 
     wrapper.unmount()
   })
@@ -156,12 +164,12 @@ describe('MapPage', () => {
 
     const calls = (fetch as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]))
     expect(calls.some((call) => call.includes('metric=bytes'))).toBe(true)
-    expect(wrapper.text()).toContain('2.00 KB')
+    expect(wrapper.text()).toContain('2.00 MB')
 
     wrapper.unmount()
   })
 
-  it('shows readable city name in tooltip for no-data regions', async () => {
+  it('shows readable city name and zero metrics in tooltip for no-data regions', async () => {
     stubFetch({ apiItems: [] })
     const wrapper = mount(MapPage)
     await flushPage()
@@ -170,6 +178,8 @@ describe('MapPage', () => {
     const tooltip = String(lastChartOption.tooltip.formatter({ name: '440300' }))
     expect(tooltip).toContain('深圳市')
     expect(tooltip).not.toContain('440300<br/>')
+    expect(tooltip).toContain('连接数: 0')
+    expect(tooltip).toContain('流量: 0 B')
 
     wrapper.unmount()
   })
@@ -271,14 +281,15 @@ describe('MapPage', () => {
     wrapper.unmount()
   })
 
-  it('keeps the geo base layer without a province-boundary overlay', async () => {
+  it('keeps the geo base layer with province boundary lines overlay', async () => {
     const wrapper = mount(MapPage)
     await flushPage()
 
     expect(lastChartOption?.geo?.map).toBe('china-cities')
-    expect(lastChartOption?.series).toHaveLength(1)
+    expect(lastChartOption?.series).toHaveLength(2)
     expect(lastChartOption?.series?.[0]?.type).toBe('map')
-    expect(lastChartOption?.series?.some((series: any) => series.type === 'lines')).toBe(false)
+    expect(lastChartOption?.series?.[1]?.type).toBe('lines')
+    expect(lastChartOption?.series?.[1]?.name).toBe('省界')
 
     wrapper.unmount()
   })

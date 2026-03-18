@@ -121,17 +121,11 @@ function forEachRing(feature: any, visit: (ring: any[]) => void) {
 }
 
 export function extractProvinceBoundarySegments(features: any[]): BoundarySegment[] {
-  const provinceSegments = new Map<string, Map<string, { count: number; segment: BoundarySegment }>>()
+  const segmentOwners = new Map<string, { segment: BoundarySegment; provinces: Set<string> }>()
 
   for (const feature of Array.isArray(features) ? features : []) {
     const province = String(feature?.properties?.province || '').trim()
     if (!province) continue
-
-    let segmentCounts = provinceSegments.get(province)
-    if (!segmentCounts) {
-      segmentCounts = new Map()
-      provinceSegments.set(province, segmentCounts)
-    }
 
     forEachRing(feature, (ring) => {
       const points = Array.isArray(ring)
@@ -145,12 +139,12 @@ export function extractProvinceBoundarySegments(features: any[]): BoundarySegmen
         if (pointKey(start) === pointKey(end)) continue
 
         const key = segmentKey(start, end)
-        const existing = segmentCounts.get(key)
+        const existing = segmentOwners.get(key)
         if (existing) {
-          existing.count += 1
+          existing.provinces.add(province)
           continue
         }
-        segmentCounts.set(key, { count: 1, segment: [start, end] })
+        segmentOwners.set(key, { segment: [start, end], provinces: new Set([province]) })
       }
 
       const first = points[0]
@@ -158,23 +152,19 @@ export function extractProvinceBoundarySegments(features: any[]): BoundarySegmen
       if (pointKey(first) === pointKey(last)) return
 
       const key = segmentKey(last, first)
-      const existing = segmentCounts.get(key)
+      const existing = segmentOwners.get(key)
       if (existing) {
-        existing.count += 1
+        existing.provinces.add(province)
         return
       }
-      segmentCounts.set(key, { count: 1, segment: [last, first] })
+      segmentOwners.set(key, { segment: [last, first], provinces: new Set([province]) })
     })
   }
 
-  const seen = new Set<string>()
   const out: BoundarySegment[] = []
-  for (const segmentCounts of provinceSegments.values()) {
-    for (const [key, item] of segmentCounts) {
-      if (item.count % 2 === 0 || seen.has(key)) continue
-      seen.add(key)
-      out.push(item.segment)
-    }
+  for (const item of segmentOwners.values()) {
+    if (item.provinces.size < 2) continue
+    out.push(item.segment)
   }
   return out
 }

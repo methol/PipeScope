@@ -72,7 +72,7 @@ describe('mapCity helpers', () => {
     expect(resolve({ province: '重庆市', city: '重庆郊县', adcode: '500200' })).toBe('500200')
   })
 
-  it('extracts province boundary segments without internal city seams', () => {
+  it('extracts inter-province boundary segments shared by multiple provinces', () => {
     const features = [
       {
         properties: { province: '甲省', city: '甲市一', adcode: '110100' },
@@ -97,8 +97,11 @@ describe('mapCity helpers', () => {
     const segments = extractProvinceBoundarySegments(features as any[])
     const keys = new Set(segments.map((segment) => keyOf(segment)))
 
+    // Segment [1,0]-[1,1] is shared by 甲省 (甲市一 and 甲市二) - NOT inter-province
     expect(keys.has(keyOf([[1, 0], [1, 1]]))).toBe(false)
-    expect(keys.has(keyOf([[0, 0], [0, 1]]))).toBe(true)
+    // Segment [0,0]-[0,1] is only in 甲省 - NOT inter-province
+    expect(keys.has(keyOf([[0, 0], [0, 1]]))).toBe(false)
+    // Segment [2,0]-[2,1] is shared by 甲省 and 乙省 - inter-province boundary
     expect(keys.has(keyOf([[2, 0], [2, 1]]))).toBe(true)
   })
 })
