@@ -332,4 +332,45 @@ describe('MapPage', () => {
 
     wrapper.unmount()
   })
+
+  it('renders full returned city list without hardcoded 12-row truncation', async () => {
+    const features = Array.from({ length: 13 }).map((_, idx) => {
+      const adcode = String(440300 + idx)
+      const baseLng = 113 + idx * 0.1
+      const baseLat = 22 + idx * 0.1
+      return {
+        properties: { province: '广东省', city: `城市${idx + 1}`, adcode },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [baseLng, baseLat],
+              [baseLng + 0.05, baseLat],
+              [baseLng + 0.05, baseLat + 0.05],
+              [baseLng, baseLat + 0.05],
+              [baseLng, baseLat],
+            ],
+          ],
+        },
+      }
+    })
+
+    stubFetch({
+      geoJSON: { type: 'FeatureCollection', features },
+      apiItems: Array.from({ length: 13 }).map((_, idx) => ({
+        adcode: String(440300 + idx),
+        province: '广东省',
+        city: `城市${idx + 1}`,
+        lat: 22.5 + idx * 0.01,
+        lng: 114.0 + idx * 0.01,
+        value: 100 - idx,
+      })),
+    })
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    expect(wrapper.text()).toContain('城市13')
+
+    wrapper.unmount()
+  })
 })

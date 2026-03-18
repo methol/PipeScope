@@ -376,7 +376,7 @@ function onResize() {
     <div ref="chartEl" class="chart"></div>
 
     <ul class="city-list">
-      <li v-for="item in sortedCityItems.slice(0, 12)" :key="item.adcode + item.city">
+      <li v-for="item in sortedCityItems" :key="item.adcode + item.city">
         <span>{{ item.province }} / {{ item.city }}</span>
         <strong>连接 {{ item.conn }} · 流量 {{ formatBytes(item.bytes) }}</strong>
       </li>
