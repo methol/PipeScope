@@ -24,6 +24,8 @@ type Runner struct {
 	dialTimeout time.Duration
 	idleTimeout time.Duration
 
+	blockedDropDuration time.Duration
+
 	geoLookup geo.GeoLookupFunc
 
 	queuePolicy string
@@ -41,14 +43,15 @@ type Runner struct {
 func NewRunner(rules []rule.Rule, out chan<- session.Event) *Runner {
 	defaultDialer := &net.Dialer{}
 	return &Runner{
-		rules:       rules,
-		out:         out,
-		dial:        defaultDialer.DialContext,
-		queuePolicy: "drop",
-		sampleRate:  0.1,
-		rng:         rand.New(rand.NewSource(time.Now().UnixNano())),
-		listeners:   make(map[string]net.Listener, len(rules)),
-		activeConns: make(map[net.Conn]struct{}),
+		rules:               rules,
+		out:                 out,
+		dial:                defaultDialer.DialContext,
+		blockedDropDuration: 2 * time.Second,
+		queuePolicy:         "drop",
+		sampleRate:          0.1,
+		rng:                 rand.New(rand.NewSource(time.Now().UnixNano())),
+		listeners:           make(map[string]net.Listener, len(rules)),
+		activeConns:         make(map[net.Conn]struct{}),
 	}
 }
 
@@ -61,6 +64,12 @@ func (r *Runner) SetDialFunc(fn dialFunc) {
 func (r *Runner) SetTimeouts(dialTimeout, idleTimeout time.Duration) {
 	r.dialTimeout = dialTimeout
 	r.idleTimeout = idleTimeout
+}
+
+func (r *Runner) SetBlockedDropDuration(d time.Duration) {
+	if d > 0 {
+		r.blockedDropDuration = d
+	}
 }
 
 func (r *Runner) SetQueuePolicy(policy string, sampleRate float64) {
@@ -198,6 +207,7 @@ func (r *Runner) proxyConn(ctx context.Context, client net.Conn, rl rule.Rule) {
 						Adcode:   geoInfo.Adcode,
 					})
 					r.emit(sess.Finalize())
+					r.silentDrop(client)
 					return
 				}
 			}
@@ -269,6 +279,20 @@ func (r *Runner) emit(evt session.Event) {
 		}
 	default:
 		r.out <- evt
+	}
+}
+
+func (r *Runner) silentDrop(conn net.Conn) {
+	if conn == nil || r.blockedDropDuration <= 0 {
+		return
+	}
+
+	_ = conn.SetReadDeadline(time.Now().Add(r.blockedDropDuration))
+	var buf [32 * 1024]byte
+	for {
+		if _, err := conn.Read(buf[:]); err != nil {
+			return
+		}
 	}
 }
 

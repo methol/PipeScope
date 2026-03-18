@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"sync"
@@ -192,12 +193,105 @@ func startEchoServer(t *testing.T) string {
 	return ln.Addr().String()
 }
 
+func assertWriteCompletes(t *testing.T, conn net.Conn, payload []byte, timeout time.Duration) {
+	t.Helper()
+
+	writeDone := make(chan error, 1)
+	go func() {
+		_, err := conn.Write(payload)
+		writeDone <- err
+	}()
+
+	select {
+	case err := <-writeDone:
+		if err != nil {
+			t.Fatalf("write payload for silent drop: %v", err)
+		}
+	case <-time.After(timeout):
+		t.Fatalf("write payload blocked for %v", timeout)
+	}
+}
+
+func assertReadTimesOutWithoutPayload(t *testing.T, conn net.Conn, timeout time.Duration) {
+	t.Helper()
+
+	if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+
+	buf := make([]byte, 64)
+	n, err := conn.Read(buf)
+	if n != 0 {
+		t.Fatalf("expected no payload during silent drop window, got %q", buf[:n])
+	}
+	if err == nil {
+		t.Fatalf("expected read to time out without payload during silent drop window")
+	}
+	if isTimeoutError(err) {
+		return
+	}
+	t.Fatalf("expected timeout without payload during silent drop window, got: %v", err)
+}
+
+func assertReadClosesWithoutPayload(t *testing.T, conn net.Conn, timeout time.Duration) {
+	t.Helper()
+
+	if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+
+	buf := make([]byte, 64)
+	n, err := conn.Read(buf)
+	if n != 0 {
+		t.Fatalf("expected no payload before blocked connection closed, got %q", buf[:n])
+	}
+	if err == nil {
+		t.Fatalf("expected blocked connection to close after silent drop window")
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) || errors.Is(err, net.ErrClosed) {
+		return
+	}
+	t.Fatalf("expected close-related read error after silent drop window, got: %v", err)
+}
+
+func assertSilentDropWindow(t *testing.T, conn net.Conn, window time.Duration) {
+	t.Helper()
+
+	assertWriteCompletes(t, conn, []byte("blocked probe payload"), 250*time.Millisecond)
+	assertReadTimesOutWithoutPayload(t, conn, window/2)
+	assertReadClosesWithoutPayload(t, conn, window*3)
+}
+
+func startProxyConnWithPipe(t *testing.T, runner *Runner, rl rule.Rule) (net.Conn, <-chan struct{}) {
+	t.Helper()
+
+	client, peer := net.Pipe()
+
+	runner.mu.Lock()
+	runner.activeConns[client] = struct{}{}
+	runner.connWG.Add(1)
+	runner.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		runner.proxyConn(context.Background(), client, rl)
+		close(done)
+	}()
+
+	t.Cleanup(func() {
+		_ = peer.Close()
+		<-done
+	})
+
+	return peer, done
+}
+
 // Geo policy tests
 
 func TestGeoPolicyDenyModeBlocksMatchingIP(t *testing.T) {
 	upstream := startEchoServer(t)
 	events := make(chan session.Event, 10)
-	
+
 	// Mock geo lookup that returns CN for 1.2.3.4
 	geoLookup := func(ip string) (geo.GeoInfo, error) {
 		if ip == "1.2.3.4" {
@@ -237,7 +331,7 @@ func TestGeoPolicyDenyModeBlocksMatchingIP(t *testing.T) {
 	// For this test, we'll use a custom dialer approach
 	// Since we can't easily control the source IP in this test setup,
 	// we test the geo lookup is called and policy is applied via the mock
-	
+
 	// The actual IP seen by runner will be 127.0.0.1, which should pass
 	conn, err := net.DialTimeout("tcp", listenAddr, 2*time.Second)
 	if err != nil {
@@ -258,49 +352,36 @@ func TestGeoPolicyDenyModeBlocksMatchingIP(t *testing.T) {
 
 func TestGeoPolicyAllowModeWithRequireAllowHit(t *testing.T) {
 	events := make(chan session.Event, 10)
-	
+	const blockedDropWindow = 80 * time.Millisecond
+
 	geoLookup := func(ip string) (geo.GeoInfo, error) {
-		if ip == "127.0.0.1" {
+		if ip == "pipe" {
 			return geo.GeoInfo{Country: "US"}, nil
 		}
 		return geo.GeoInfo{Country: "CN"}, nil
 	}
 
-	runner := NewRunner([]rule.Rule{
-		{
-			ID:      "r1",
-			Listen:  "127.0.0.1:0",
-			Forward: "127.0.0.1:9999", // Intentionally wrong, should not be dialed
-			GeoPolicy: &rule.GeoPolicy{
-				RequireAllowHit: true,
-				Allow: []rule.GeoRule{
-					{Country: "CN"},
-				},
+	rl := rule.Rule{
+		ID:      "r1",
+		Listen:  "127.0.0.1:0",
+		Forward: "127.0.0.1:9999", // Intentionally wrong, should not be dialed
+		GeoPolicy: &rule.GeoPolicy{
+			RequireAllowHit: true,
+			Allow: []rule.GeoRule{
+				{Country: "CN"},
 			},
 		},
-	}, events)
+	}
+
+	runner := NewRunner(nil, events)
 	runner.SetGeoLookup(geoLookup)
+	runner.SetBlockedDropDuration(blockedDropWindow)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	peer, done := startProxyConnWithPipe(t, runner, rl)
+	assertSilentDropWindow(t, peer, blockedDropWindow)
+	<-done
 
-	if err := runner.Start(ctx); err != nil {
-		t.Fatalf("start runner: %v", err)
-	}
-	defer runner.Close()
-
-	listenAddr, ok := runner.ListenAddr("r1")
-	if !ok {
-		t.Fatalf("missing runtime listen addr")
-	}
-
-	conn, err := net.DialTimeout("tcp", listenAddr, 2*time.Second)
-	if err != nil {
-		t.Fatalf("dial runner: %v", err)
-	}
-	_ = conn.Close()
-
-	// Connection should be blocked because 127.0.0.1 returns US, which is not in allowlist
+	// Connection should be blocked because pipe returns US, which is not in allowlist
 	select {
 	case evt := <-events:
 		if evt.Status != "blocked" {
@@ -319,10 +400,11 @@ func TestGeoPolicyAllowModeWithRequireAllowHit(t *testing.T) {
 
 func TestGeoPolicyBlockedConnectionDoesNotDial(t *testing.T) {
 	events := make(chan session.Event, 10)
-	
+	const blockedDropWindow = 80 * time.Millisecond
+
 	var dialCount int
 	var dialMu sync.Mutex
-	
+
 	// Custom dialer that counts calls
 	dialFunc := func(ctx context.Context, network, addr string) (net.Conn, error) {
 		dialMu.Lock()
@@ -332,45 +414,31 @@ func TestGeoPolicyBlockedConnectionDoesNotDial(t *testing.T) {
 	}
 
 	geoLookup := func(ip string) (geo.GeoInfo, error) {
-		if ip == "127.0.0.1" {
+		if ip == "pipe" {
 			return geo.GeoInfo{Country: "CN", Province: "北京"}, nil
 		}
 		return geo.GeoInfo{Country: "US"}, nil
 	}
 
-	runner := NewRunner([]rule.Rule{
-		{
-			ID:      "r1",
-			Listen:  "127.0.0.1:0",
-			Forward: "127.0.0.1:9999",
-			GeoPolicy: &rule.GeoPolicy{
-				Deny: []rule.GeoRule{
-					{Country: "CN"},
-				},
+	rl := rule.Rule{
+		ID:      "r1",
+		Listen:  "127.0.0.1:0",
+		Forward: "127.0.0.1:9999",
+		GeoPolicy: &rule.GeoPolicy{
+			Deny: []rule.GeoRule{
+				{Country: "CN"},
 			},
 		},
-	}, events)
+	}
+
+	runner := NewRunner(nil, events)
 	runner.SetDialFunc(dialFunc)
 	runner.SetGeoLookup(geoLookup)
+	runner.SetBlockedDropDuration(blockedDropWindow)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	if err := runner.Start(ctx); err != nil {
-		t.Fatalf("start runner: %v", err)
-	}
-	defer runner.Close()
-
-	listenAddr, ok := runner.ListenAddr("r1")
-	if !ok {
-		t.Fatalf("missing runtime listen addr")
-	}
-
-	conn, err := net.DialTimeout("tcp", listenAddr, 2*time.Second)
-	if err != nil {
-		t.Fatalf("dial runner: %v", err)
-	}
-	_ = conn.Close()
+	peer, done := startProxyConnWithPipe(t, runner, rl)
+	assertSilentDropWindow(t, peer, blockedDropWindow)
+	<-done
 
 	select {
 	case evt := <-events:
@@ -385,7 +453,7 @@ func TestGeoPolicyBlockedConnectionDoesNotDial(t *testing.T) {
 	dialMu.Lock()
 	count := dialCount
 	dialMu.Unlock()
-	
+
 	if count != 0 {
 		t.Fatalf("dial should not be called for blocked connection, but was called %d times", count)
 	}
@@ -393,8 +461,12 @@ func TestGeoPolicyBlockedConnectionDoesNotDial(t *testing.T) {
 
 func TestGeoPolicyRecordsGeoInfoInBlockedEvent(t *testing.T) {
 	events := make(chan session.Event, 10)
-	
+	const blockedDropWindow = 80 * time.Millisecond
+
 	geoLookup := func(ip string) (geo.GeoInfo, error) {
+		if ip != "pipe" {
+			t.Fatalf("unexpected lookup ip: %q", ip)
+		}
 		return geo.GeoInfo{
 			Country:  "RU",
 			Province: "Moscow",
@@ -403,38 +475,24 @@ func TestGeoPolicyRecordsGeoInfoInBlockedEvent(t *testing.T) {
 		}, nil
 	}
 
-	runner := NewRunner([]rule.Rule{
-		{
-			ID:      "r1",
-			Listen:  "127.0.0.1:0",
-			Forward: "127.0.0.1:9999",
-			GeoPolicy: &rule.GeoPolicy{
-				Deny: []rule.GeoRule{
-					{Country: "RU"},
-				},
+	rl := rule.Rule{
+		ID:      "r1",
+		Listen:  "127.0.0.1:0",
+		Forward: "127.0.0.1:9999",
+		GeoPolicy: &rule.GeoPolicy{
+			Deny: []rule.GeoRule{
+				{Country: "RU"},
 			},
 		},
-	}, events)
+	}
+
+	runner := NewRunner(nil, events)
 	runner.SetGeoLookup(geoLookup)
+	runner.SetBlockedDropDuration(blockedDropWindow)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	if err := runner.Start(ctx); err != nil {
-		t.Fatalf("start runner: %v", err)
-	}
-	defer runner.Close()
-
-	listenAddr, ok := runner.ListenAddr("r1")
-	if !ok {
-		t.Fatalf("missing runtime listen addr")
-	}
-
-	conn, err := net.DialTimeout("tcp", listenAddr, 2*time.Second)
-	if err != nil {
-		t.Fatalf("dial runner: %v", err)
-	}
-	_ = conn.Close()
+	peer, done := startProxyConnWithPipe(t, runner, rl)
+	assertSilentDropWindow(t, peer, blockedDropWindow)
+	<-done
 
 	select {
 	case evt := <-events:
@@ -460,4 +518,3 @@ func TestGeoPolicyRecordsGeoInfoInBlockedEvent(t *testing.T) {
 		t.Fatalf("timeout waiting event")
 	}
 }
-
