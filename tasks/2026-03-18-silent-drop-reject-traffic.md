@@ -238,3 +238,96 @@ ok  	pipescope/internal/gateway/proxy	0.876s
 
 - 本阶段已经完成对 review 问题的验证和修复。
 - 按用户要求应在本阶段提交，计划提交信息为 `test: require blocked pipe reads to close cleanly`；但当前沙箱仍禁止写 `.git`，实际 commit 仍无法执行。
+
+## Stage 6 - Implement TCP Silent Drop Window
+
+### 执行摘要
+
+- 按用户已确认的“方案 1”修改 `internal/gateway/proxy/runner.go`，在 Runner 内部新增默认 `blockedDropDuration` 与 setter，不接配置文件/CLI。
+- geo blocked 分支从“emit 后立即 return + close”改成 `MarkBlockedGeo -> emit -> silentDrop(client) -> return`。
+- `silentDrop(client)` 在窗口内只读并吞掉客户端发来的字节，不向客户端写任何响应；窗口到期后返回，交给原有 `defer client.Close()` 收尾。
+- `internal/gateway/proxy/runner_test.go` 的 blocked 单测同步升级为窗口语义：先验证短窗口内读不到 payload，再验证窗口结束后连接关闭，同时保留 `no-dial`、`blocked_reason` 与 geo 字段断言。
+
+### 实际改动
+
+- `internal/gateway/proxy/runner.go`
+  - 新增 `blockedDropDuration time.Duration`
+  - `NewRunner(...)` 默认初始化为 `2 * time.Second`
+  - 新增 `SetBlockedDropDuration(d time.Duration)`，仅在 `d > 0` 时生效
+  - 新增 `silentDrop(conn net.Conn)`，通过 `SetReadDeadline(now + blockedDropDuration)` + 循环 `Read` 吞读数据
+  - 在 geo blocked 分支中改为 `emit` 后执行 `silentDrop(client)`
+- `internal/gateway/proxy/runner_test.go`
+  - 新增 `assertWriteCompletes`、`assertReadTimesOutWithoutPayload`、`assertReadClosesWithoutPayload`、`assertSilentDropWindow`
+  - `TestGeoPolicyAllowModeWithRequireAllowHit` 现在证明：
+    - blocked 后窗口内读不到 payload
+    - 窗口结束后连接关闭
+    - `blocked_reason=geo_not_in_allowlist` 和 geo 字段仍正确
+  - `TestGeoPolicyBlockedConnectionDoesNotDial` 现在证明：
+    - blocked silent drop 期间无 payload
+    - 窗口结束后关闭
+    - upstream dial 次数仍为 0
+  - `TestGeoPolicyRecordsGeoInfoInBlockedEvent` 现在证明：
+    - blocked silent drop 行为存在
+    - `blocked_reason=geo_denied` 与 country/province/city/adcode 仍保留
+
+### 验证证据
+
+Red（先写失败测试，再验证缺实现）：
+
+```bash
+mkdir -p /tmp/pipescope-gocache /tmp/pipescope-gotmp && \
+GOCACHE=/tmp/pipescope-gocache GOTMPDIR=/tmp/pipescope-gotmp \
+go test ./internal/gateway/proxy -run 'TestGeoPolicy(AllowModeWithRequireAllowHit|BlockedConnectionDoesNotDial|RecordsGeoInfoInBlockedEvent)$' -count=1
+```
+
+Result:
+
+```text
+# pipescope/internal/gateway/proxy [pipescope/internal/gateway/proxy.test]
+internal/gateway/proxy/runner_test.go:378:9: runner.SetBlockedDropDuration undefined (type *Runner has no field or method SetBlockedDropDuration)
+internal/gateway/proxy/runner_test.go:437:9: runner.SetBlockedDropDuration undefined (type *Runner has no field or method SetBlockedDropDuration)
+internal/gateway/proxy/runner_test.go:491:9: runner.SetBlockedDropDuration undefined (type *Runner has no field or method SetBlockedDropDuration)
+FAIL	pipescope/internal/gateway/proxy [build failed]
+```
+
+Green（实现后目标用例通过）：
+
+```bash
+mkdir -p /tmp/pipescope-gocache /tmp/pipescope-gotmp && \
+GOCACHE=/tmp/pipescope-gocache GOTMPDIR=/tmp/pipescope-gotmp \
+go test ./internal/gateway/proxy -run 'TestGeoPolicy(AllowModeWithRequireAllowHit|BlockedConnectionDoesNotDial|RecordsGeoInfoInBlockedEvent)$' -count=1
+```
+
+Result:
+
+```text
+ok  	pipescope/internal/gateway/proxy	1.277s
+```
+
+用户要求的整包验证命令已执行：
+
+```bash
+GOCACHE=/tmp/pipescope-gocache GOTMPDIR=/tmp/pipescope-gotmp go test ./internal/gateway/proxy -count=1
+```
+
+Result:
+
+```text
+--- FAIL: TestProxyForwardsBytes (0.00s)
+    runner_test.go:19: listen echo: listen tcp 127.0.0.1:0: bind: operation not permitted
+--- FAIL: TestGeoPolicyDenyModeBlocksMatchingIP (0.00s)
+    runner_test.go:292: listen echo: listen tcp 127.0.0.1:0: bind: operation not permitted
+--- FAIL: TestDialTimeoutStatus (0.00s)
+    timeout_test.go:38: start runner: listen tcp 127.0.0.1:0: bind: operation not permitted
+FAIL
+```
+
+### 风险与回归结论
+
+- 这次改动已覆盖本任务要求的 TCP silent drop 窗口语义，且 `no-dial`、`blocked_reason`、geo 字段未回退。
+- 当前 `emit(sess.Finalize())` 仍发生在 `silentDrop` 之前，因此 blocked 事件的 `DurationMS` 不包含 silent drop 窗口；这是按用户给定调用顺序实现的，但如果后续要把窗口时间计入会话时长，需要另起改动。
+- 包内仍有 3 条历史测试依赖 `listen tcp 127.0.0.1:0`，在当前受限环境下无法通过；这不是 silent drop 逻辑回归，而是现有测试形态与沙箱能力不兼容。
+
+### 下一步
+
+- 如果要求在当前沙箱里让 `go test ./internal/gateway/proxy -count=1` 全绿，需要把剩余 bind 依赖测试（至少 `TestProxyForwardsBytes`、`TestGeoPolicyDenyModeBlocksMatchingIP`、`TestDialTimeoutStatus`）也重构为不依赖本地监听端口的测试形态。

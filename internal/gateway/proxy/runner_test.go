@@ -193,25 +193,73 @@ func startEchoServer(t *testing.T) string {
 	return ln.Addr().String()
 }
 
-func assertReadReturnsNoPayload(t *testing.T, conn net.Conn) {
+func assertWriteCompletes(t *testing.T, conn net.Conn, payload []byte, timeout time.Duration) {
 	t.Helper()
 
-	if err := conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
+	writeDone := make(chan error, 1)
+	go func() {
+		_, err := conn.Write(payload)
+		writeDone <- err
+	}()
+
+	select {
+	case err := <-writeDone:
+		if err != nil {
+			t.Fatalf("write payload for silent drop: %v", err)
+		}
+	case <-time.After(timeout):
+		t.Fatalf("write payload blocked for %v", timeout)
+	}
+}
+
+func assertReadTimesOutWithoutPayload(t *testing.T, conn net.Conn, timeout time.Duration) {
+	t.Helper()
+
+	if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
 		t.Fatalf("set read deadline: %v", err)
 	}
 
 	buf := make([]byte, 64)
 	n, err := conn.Read(buf)
 	if n != 0 {
-		t.Fatalf("expected no payload from blocked connection, got %q", buf[:n])
+		t.Fatalf("expected no payload during silent drop window, got %q", buf[:n])
 	}
 	if err == nil {
-		t.Fatalf("expected blocked connection to close without payload")
+		t.Fatalf("expected read to time out without payload during silent drop window")
+	}
+	if isTimeoutError(err) {
+		return
+	}
+	t.Fatalf("expected timeout without payload during silent drop window, got: %v", err)
+}
+
+func assertReadClosesWithoutPayload(t *testing.T, conn net.Conn, timeout time.Duration) {
+	t.Helper()
+
+	if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+
+	buf := make([]byte, 64)
+	n, err := conn.Read(buf)
+	if n != 0 {
+		t.Fatalf("expected no payload before blocked connection closed, got %q", buf[:n])
+	}
+	if err == nil {
+		t.Fatalf("expected blocked connection to close after silent drop window")
 	}
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) || errors.Is(err, net.ErrClosed) {
 		return
 	}
-	t.Fatalf("expected close-related read error without payload, got: %v", err)
+	t.Fatalf("expected close-related read error after silent drop window, got: %v", err)
+}
+
+func assertSilentDropWindow(t *testing.T, conn net.Conn, window time.Duration) {
+	t.Helper()
+
+	assertWriteCompletes(t, conn, []byte("blocked probe payload"), 250*time.Millisecond)
+	assertReadTimesOutWithoutPayload(t, conn, window/2)
+	assertReadClosesWithoutPayload(t, conn, window*3)
 }
 
 func startProxyConnWithPipe(t *testing.T, runner *Runner, rl rule.Rule) (net.Conn, <-chan struct{}) {
@@ -304,6 +352,7 @@ func TestGeoPolicyDenyModeBlocksMatchingIP(t *testing.T) {
 
 func TestGeoPolicyAllowModeWithRequireAllowHit(t *testing.T) {
 	events := make(chan session.Event, 10)
+	const blockedDropWindow = 80 * time.Millisecond
 
 	geoLookup := func(ip string) (geo.GeoInfo, error) {
 		if ip == "pipe" {
@@ -326,9 +375,10 @@ func TestGeoPolicyAllowModeWithRequireAllowHit(t *testing.T) {
 
 	runner := NewRunner(nil, events)
 	runner.SetGeoLookup(geoLookup)
+	runner.SetBlockedDropDuration(blockedDropWindow)
 
 	peer, done := startProxyConnWithPipe(t, runner, rl)
-	assertReadReturnsNoPayload(t, peer)
+	assertSilentDropWindow(t, peer, blockedDropWindow)
 	<-done
 
 	// Connection should be blocked because pipe returns US, which is not in allowlist
@@ -350,6 +400,7 @@ func TestGeoPolicyAllowModeWithRequireAllowHit(t *testing.T) {
 
 func TestGeoPolicyBlockedConnectionDoesNotDial(t *testing.T) {
 	events := make(chan session.Event, 10)
+	const blockedDropWindow = 80 * time.Millisecond
 
 	var dialCount int
 	var dialMu sync.Mutex
@@ -383,9 +434,10 @@ func TestGeoPolicyBlockedConnectionDoesNotDial(t *testing.T) {
 	runner := NewRunner(nil, events)
 	runner.SetDialFunc(dialFunc)
 	runner.SetGeoLookup(geoLookup)
+	runner.SetBlockedDropDuration(blockedDropWindow)
 
 	peer, done := startProxyConnWithPipe(t, runner, rl)
-	assertReadReturnsNoPayload(t, peer)
+	assertSilentDropWindow(t, peer, blockedDropWindow)
 	<-done
 
 	select {
@@ -409,6 +461,7 @@ func TestGeoPolicyBlockedConnectionDoesNotDial(t *testing.T) {
 
 func TestGeoPolicyRecordsGeoInfoInBlockedEvent(t *testing.T) {
 	events := make(chan session.Event, 10)
+	const blockedDropWindow = 80 * time.Millisecond
 
 	geoLookup := func(ip string) (geo.GeoInfo, error) {
 		if ip != "pipe" {
@@ -435,9 +488,10 @@ func TestGeoPolicyRecordsGeoInfoInBlockedEvent(t *testing.T) {
 
 	runner := NewRunner(nil, events)
 	runner.SetGeoLookup(geoLookup)
+	runner.SetBlockedDropDuration(blockedDropWindow)
 
 	peer, done := startProxyConnWithPipe(t, runner, rl)
-	assertReadReturnsNoPayload(t, peer)
+	assertSilentDropWindow(t, peer, blockedDropWindow)
 	<-done
 
 	select {
