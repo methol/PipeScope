@@ -15,7 +15,6 @@ const metric = ref('conn')
 const sortBy = ref<'conn' | 'bytes'>('conn')
 const sortOrder = ref<'desc' | 'asc'>('desc')
 const limit = ref('1000')
-const customLimit = ref('')
 const ruleID = ref('')
 const status = ref('')
 const loading = ref(false)
@@ -43,14 +42,6 @@ const emptyHint = computed(() => (!loading.value && !error.value && cityItems.va
 const displayValue = (v: number) => (metric.value === 'bytes' ? formatBytes(v) : String(v))
 
 function resolveEffectiveLimit(): string {
-  const trimmedCustom = customLimit.value.trim()
-  if (trimmedCustom) {
-    const parsed = Number(trimmedCustom)
-    if (Number.isFinite(parsed)) {
-      const normalized = Math.max(1, Math.min(10000, Math.floor(parsed)))
-      return String(normalized)
-    }
-  }
   const parsedPreset = Number(limit.value)
   if (Number.isFinite(parsedPreset) && parsedPreset > 0) {
     return String(Math.floor(parsedPreset))
@@ -276,7 +267,7 @@ watch(windowText, async () => {
   void load()
 })
 
-watch([ruleID, status, limit, customLimit], () => {
+watch([ruleID, status, limit], () => {
   void load()
 })
 
@@ -362,10 +353,6 @@ function onResize() {
             <option value="5000">5000</option>
             <option value="10000">10000</option>
           </select>
-        </label>
-        <label>
-          自定义 Limit
-          <input v-model.trim="customLimit" type="number" min="1" max="10000" placeholder="1-10000" />
         </label>
         <button class="btn" @click="load">手动刷新</button>
       </div>
