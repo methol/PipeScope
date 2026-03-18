@@ -47,6 +47,7 @@ describe('mapCity helpers', () => {
     expect(out).toHaveLength(4)
     expect(out.map((f) => f.properties.city_name)).toEqual(['渝中区', '神农架林区', '临高县', '深圳市'])
     expect(out.map((f) => f.properties.city_key)).toEqual(['500103', '429021', '469024', '440300'])
+    expect(out.map((f) => f.properties.name)).toEqual(['500103', '429021', '469024', '440300'])
   })
 
   it('resolves API join key to normalized adcode without alias collisions', () => {
