@@ -3,20 +3,25 @@ import * as echarts from 'echarts'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { fetchChinaMap, fetchAnalyticsOptions, type MapPoint, type AnalyticsOptions } from '../api/client'
 import { formatBytes } from '../utils/format'
-import { createCityJoinKeyResolver, normalizeCityGeoFeatures } from './mapCity'
+import { createCityJoinKeyResolver, extractProvinceBoundarySegments, normalizeCityGeoFeatures } from './mapCity'
 
 const CHINA_MAP_NAME = 'china-cities'
 const CHINA_GEOJSON_URL = '/maps/china-cities.geojson'
 
+type CityMetricsItem = MapPoint & { conn: number; bytes: number }
+
 const windowText = ref('1h')
 const metric = ref('conn')
-const limit = ref('100')
+const sortBy = ref<'conn' | 'bytes'>('conn')
+const sortOrder = ref<'desc' | 'asc'>('desc')
+const limit = ref('1000')
+const customLimit = ref('')
 const ruleID = ref('')
 const status = ref('')
 const loading = ref(false)
 const optionsLoading = ref(false)
 const error = ref('')
-const cityItems = ref<MapPoint[]>([])
+const cityItems = ref<CityMetricsItem[]>([])
 const options = ref<AnalyticsOptions>({
   rules: [],
   provinces: [],
@@ -25,6 +30,8 @@ const options = ref<AnalyticsOptions>({
 })
 const resolveCityJoinKey = ref<(item: MapPoint) => string>((item) => String(item.adcode || '').trim())
 const mapCityNameByKey = ref<Map<string, string>>(new Map())
+const mapProvinceNameByKey = ref<Map<string, string>>(new Map())
+const provinceBoundarySegments = ref<number[][][]>([])
 
 const chartEl = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
@@ -34,6 +41,35 @@ let mapLoading: Promise<void> | null = null
 const title = computed(() => (metric.value === 'bytes' ? '城市流量热度（市级边界）' : '城市连接热度（市级边界）'))
 const emptyHint = computed(() => (!loading.value && !error.value && cityItems.value.length === 0 ? '当前窗口暂无城市指标数据' : ''))
 const displayValue = (v: number) => (metric.value === 'bytes' ? formatBytes(v) : String(v))
+
+function resolveEffectiveLimit(): string {
+  const trimmedCustom = customLimit.value.trim()
+  if (trimmedCustom) {
+    const parsed = Number(trimmedCustom)
+    if (Number.isFinite(parsed)) {
+      const normalized = Math.max(1, Math.min(10000, Math.floor(parsed)))
+      return String(normalized)
+    }
+  }
+  const parsedPreset = Number(limit.value)
+  if (Number.isFinite(parsedPreset) && parsedPreset > 0) {
+    return String(Math.floor(parsedPreset))
+  }
+  return '1000'
+}
+
+function metricValue(item: CityMetricsItem, field: 'conn' | 'bytes'): number {
+  return field === 'bytes' ? Number(item.bytes) || 0 : Number(item.conn) || 0
+}
+
+const sortedCityItems = computed<CityMetricsItem[]>(() => {
+  const order = sortOrder.value === 'asc' ? 1 : -1
+  return [...cityItems.value].sort((a, b) => {
+    const delta = metricValue(a, sortBy.value) - metricValue(b, sortBy.value)
+    if (delta !== 0) return delta * order
+    return String(a.adcode || '').localeCompare(String(b.adcode || ''))
+  })
+})
 
 async function loadOptions() {
   optionsLoading.value = true
@@ -66,6 +102,15 @@ async function ensureChinaMap() {
         return [key, name] as const
       }),
     )
+    mapProvinceNameByKey.value = new Map(
+      geoJSON.features.map((feature: any) => {
+        const p = feature?.properties || {}
+        const key = String(p.city_key || '').trim()
+        const province = String(p.province || '').trim()
+        return [key, province] as const
+      }),
+    )
+    provinceBoundarySegments.value = extractProvinceBoundarySegments(geoJSON.features)
     echarts.registerMap(CHINA_MAP_NAME, geoJSON)
     mapReady = true
   })()
@@ -82,13 +127,31 @@ async function load() {
   error.value = ''
   try {
     await ensureChinaMap()
-    cityItems.value = await fetchChinaMap({
-      window: windowText.value,
-      metric: metric.value,
-      limit: limit.value,
-      rule_id: ruleID.value,
-      status: status.value,
-    })
+    const effectiveLimit = resolveEffectiveLimit()
+    const [connItems, bytesItems] = await Promise.all([
+      fetchChinaMap({ window: windowText.value, metric: 'conn', limit: effectiveLimit, rule_id: ruleID.value, status: status.value }),
+      fetchChinaMap({ window: windowText.value, metric: 'bytes', limit: effectiveLimit, rule_id: ruleID.value, status: status.value }),
+    ])
+
+    const itemByKey = new Map<string, CityMetricsItem>()
+    for (const item of connItems) {
+      const key = resolveCityJoinKey.value(item)
+      if (!key) continue
+      itemByKey.set(key, { ...item, conn: Number(item.value) || 0, bytes: 0 })
+    }
+    for (const item of bytesItems) {
+      const key = resolveCityJoinKey.value(item)
+      if (!key) continue
+      const existing = itemByKey.get(key)
+      if (existing) {
+        existing.bytes = Number(item.value) || 0
+        if (!existing.city && item.city) existing.city = item.city
+        if (!existing.province && item.province) existing.province = item.province
+        continue
+      }
+      itemByKey.set(key, { ...item, conn: 0, bytes: Number(item.value) || 0 })
+    }
+    cityItems.value = Array.from(itemByKey.values())
     render()
   } catch (e) {
     cityItems.value = []
@@ -104,17 +167,24 @@ function render() {
   if (typeof window !== 'undefined' && /jsdom/i.test(window.navigator.userAgent)) return
   if (!chart) chart = echarts.init(chartEl.value, undefined, { renderer: 'canvas' })
 
-  const cityData = cityItems.value
-    .map((item) => ({
-      name: resolveCityJoinKey.value(item),
-      cityName: item.city,
-      value: Number(item.value) || 0,
-    }))
+  const cityData = sortedCityItems.value
+    .map((item) => {
+      const key = resolveCityJoinKey.value(item)
+      return {
+        name: key,
+        cityName: item.city,
+        province: item.province,
+        conn: Number(item.conn) || 0,
+        bytes: Number(item.bytes) || 0,
+        value: metric.value === 'bytes' ? Number(item.bytes) || 0 : Number(item.conn) || 0,
+      }
+    })
     .filter((item) => item.name && mapCityNameByKey.value.has(item.name))
   const cityNameByKey = new Map([
     ...mapCityNameByKey.value.entries(),
     ...cityData.map((it) => [it.name, it.cityName] as const),
   ])
+  const provinceBoundaryData = provinceBoundarySegments.value.map((coords) => ({ coords }))
   const values = cityData.map((item) => item.value)
   const min = values.length > 0 ? Math.min(...values) : 0
   const max = values.length > 0 ? Math.max(...values) : 1
@@ -139,8 +209,11 @@ function render() {
       formatter: (params: { data?: any; name?: string; value?: any }) => {
         const key = String(params.data?.name || params.name || '')
         const cityName = String(params.data?.cityName || cityNameByKey.get(key) || key || '未知城市').trim()
-        const val = Number(params.data?.value ?? params.value ?? 0)
-        return `${cityName}<br/>${title.value}: ${displayValue(val)}`
+        const province = String(params.data?.province || mapProvinceNameByKey.value.get(key) || '').trim()
+        const conn = Number(params.data?.conn ?? 0)
+        const bytes = Number(params.data?.bytes ?? 0)
+        const header = province ? `${province} / ${cityName}` : cityName
+        return `${header}<br/>连接数: ${conn}<br/>流量: ${formatBytes(bytes)}`
       },
     },
     visualMap: {
@@ -181,16 +254,34 @@ function render() {
           borderWidth: 0.7,
         },
       },
+      {
+        name: '省界',
+        type: 'lines',
+        coordinateSystem: 'geo',
+        silent: true,
+        zlevel: 1,
+        data: provinceBoundaryData,
+        lineStyle: {
+          color: '#3d5a80',
+          width: 1.8,
+          opacity: 0.9,
+        },
+      },
     ],
   })
 }
 
 watch(windowText, async () => {
   await loadOptions()
+  void load()
 })
 
-watch([metric, limit, ruleID, status], () => {
+watch([ruleID, status, limit, customLimit], () => {
   void load()
+})
+
+watch([metric, sortBy, sortOrder], () => {
+  render()
 })
 
 onMounted(async () => {
@@ -243,20 +334,38 @@ function onResize() {
           </select>
         </label>
         <label>
-          指标
+          地图着色
           <select v-model="metric">
+            <option value="conn">按连接数</option>
+            <option value="bytes">按流量</option>
+          </select>
+        </label>
+        <label>
+          排序
+          <select v-model="sortBy">
             <option value="conn">连接数</option>
-            <option value="bytes">字节数</option>
+            <option value="bytes">流量</option>
+          </select>
+        </label>
+        <label>
+          顺序
+          <select v-model="sortOrder">
+            <option value="desc">降序</option>
+            <option value="asc">升序</option>
           </select>
         </label>
         <label>
           Top
           <select v-model="limit">
-            <option value="10">10</option>
-            <option value="50">50</option>
             <option value="100">100</option>
             <option value="1000">1000</option>
+            <option value="5000">5000</option>
+            <option value="10000">10000</option>
           </select>
+        </label>
+        <label>
+          自定义 Limit
+          <input v-model.trim="customLimit" type="number" min="1" max="10000" placeholder="1-10000" />
         </label>
         <button class="btn" @click="load">手动刷新</button>
       </div>
@@ -271,9 +380,9 @@ function onResize() {
     <div ref="chartEl" class="chart"></div>
 
     <ul class="city-list">
-      <li v-for="item in cityItems.slice(0, 8)" :key="item.adcode + item.city">
-        <span>{{ item.city }}</span>
-        <strong>{{ displayValue(item.value) }}</strong>
+      <li v-for="item in sortedCityItems.slice(0, 12)" :key="item.adcode + item.city">
+        <span>{{ item.province }} / {{ item.city }}</span>
+        <strong>连接 {{ item.conn }} · 流量 {{ formatBytes(item.bytes) }}</strong>
       </li>
     </ul>
   </section>
