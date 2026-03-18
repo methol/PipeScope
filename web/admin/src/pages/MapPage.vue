@@ -39,14 +39,21 @@ let mapLoading: Promise<void> | null = null
 
 const title = computed(() => (metric.value === 'bytes' ? '城市流量热度（市级边界）' : '城市连接热度（市级边界）'))
 const emptyHint = computed(() => (!loading.value && !error.value && cityItems.value.length === 0 ? '当前窗口暂无城市指标数据' : ''))
+const returnedCityCountText = computed(
+  () => `当前窗口返回城市数：${visibleCityItems.value.length}（Top ${resolveEffectiveLimit()} 为上限，不是保底）`,
+)
 const displayValue = (v: number) => (metric.value === 'bytes' ? formatBytes(v) : String(v))
 
-function resolveEffectiveLimit(): string {
+function resolveEffectiveLimitValue(): number {
   const parsedPreset = Number(limit.value)
   if (Number.isFinite(parsedPreset) && parsedPreset > 0) {
-    return String(Math.floor(parsedPreset))
+    return Math.floor(parsedPreset)
   }
-  return '1000'
+  return 1000
+}
+
+function resolveEffectiveLimit(): string {
+  return String(resolveEffectiveLimitValue())
 }
 
 function metricValue(item: CityMetricsItem, field: 'conn' | 'bytes'): number {
@@ -61,6 +68,8 @@ const sortedCityItems = computed<CityMetricsItem[]>(() => {
     return String(a.adcode || '').localeCompare(String(b.adcode || ''))
   })
 })
+
+const visibleCityItems = computed<CityMetricsItem[]>(() => sortedCityItems.value.slice(0, resolveEffectiveLimitValue()))
 
 async function loadOptions() {
   optionsLoading.value = true
@@ -185,14 +194,18 @@ function render() {
     geo: {
       map: CHINA_MAP_NAME,
       roam: true,
-      silent: true,
+      silent: false,
       itemStyle: {
         areaColor: '#f4f8ff',
         borderColor: '#99afc9',
         borderWidth: 0.7,
       },
       emphasis: {
-        disabled: true,
+        itemStyle: {
+          areaColor: '#f4f8ff',
+          borderColor: '#99afc9',
+          borderWidth: 0.7,
+        },
       },
     },
     tooltip: {
@@ -250,12 +263,13 @@ function render() {
         type: 'lines',
         coordinateSystem: 'geo',
         silent: true,
-        zlevel: 1,
+        zlevel: 2,
+        z: 20,
         data: provinceBoundaryData,
         lineStyle: {
-          color: '#3d5a80',
-          width: 1.8,
-          opacity: 0.9,
+          color: '#16324f',
+          width: 2.8,
+          opacity: 1,
         },
       },
     ],
@@ -359,6 +373,7 @@ function onResize() {
     </div>
 
     <p class="meta">{{ title }} · 分析型页面（不自动刷新）</p>
+    <p class="meta">{{ returnedCityCountText }}</p>
     <p v-if="optionsLoading" class="meta">筛选项加载中...</p>
     <p v-if="loading" class="meta">加载中...</p>
     <p v-if="error" class="error">{{ error }}</p>
@@ -367,7 +382,7 @@ function onResize() {
     <div ref="chartEl" class="chart"></div>
 
     <ul class="city-list">
-      <li v-for="item in sortedCityItems.slice(0, 12)" :key="item.adcode + item.city">
+      <li v-for="item in visibleCityItems" :key="item.adcode + item.city">
         <span>{{ item.province }} / {{ item.city }}</span>
         <strong>连接 {{ item.conn }} · 流量 {{ formatBytes(item.bytes) }}</strong>
       </li>

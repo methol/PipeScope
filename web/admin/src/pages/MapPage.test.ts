@@ -26,6 +26,42 @@ const geoJSON = {
   ],
 }
 
+function buildCityFixtures(count: number) {
+  const features = Array.from({ length: count }, (_, index) => {
+    const adcode = String(440300 + index)
+    const lng = 113 + index * 0.05
+    const lat = 22 + index * 0.02
+    return {
+      properties: {
+        province: '广东省',
+        city: `测试市${index + 1}`,
+        adcode,
+      },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[[lng, lat], [lng + 0.03, lat], [lng + 0.03, lat + 0.03], [lng, lat + 0.03], [lng, lat]]],
+      },
+    }
+  })
+
+  const apiItems = features.map((feature, index) => ({
+    adcode: feature.properties.adcode,
+    province: String(feature.properties.province),
+    city: String(feature.properties.city),
+    lat: 22 + index * 0.02,
+    lng: 113 + index * 0.05,
+    value: count - index,
+  }))
+
+  return {
+    geoJSON: {
+      type: 'FeatureCollection',
+      features,
+    },
+    apiItems,
+  }
+}
+
 function stubFetch(options?: {
   geoOK?: boolean
   cityOK?: boolean
@@ -127,7 +163,7 @@ describe('MapPage', () => {
     wrapper.unmount()
   })
 
-  it('renders inter-province boundary overlay as lines', async () => {
+  it('renders interactive city heatmap with tooltip and province boundary overlay', async () => {
     const wrapper = mount(MapPage)
     await flushPage()
 
@@ -135,9 +171,38 @@ describe('MapPage', () => {
     expect(lastChartOption?.series?.some((series: any) => series.type === 'lines')).toBe(true)
 
     const tooltip = String(lastChartOption.tooltip.formatter({ name: '440300' }))
+    expect(tooltip).toContain('广东省 / 深圳市')
     expect(tooltip).toContain('深圳市')
     expect(tooltip).toContain('连接数: 0')
     expect(tooltip).toContain('流量: 0 B')
+
+    wrapper.unmount()
+  })
+
+  it('keeps city hover interaction enabled while province boundary overlay stays silent', async () => {
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    expect(lastChartOption?.geo?.silent).not.toBe(true)
+    expect(lastChartOption?.geo?.emphasis?.disabled).not.toBe(true)
+    expect(lastChartOption?.series?.[1]?.type).toBe('lines')
+    expect(lastChartOption?.series?.[1]?.silent).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('renders stronger province boundary styling on top of city polygons', async () => {
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    expect(lastChartOption?.series?.[1]?.type).toBe('lines')
+    expect(lastChartOption?.series?.[1]?.zlevel).toBe(2)
+    expect(lastChartOption?.series?.[1]?.z).toBe(20)
+    expect(lastChartOption?.series?.[1]?.lineStyle).toMatchObject({
+      color: '#16324f',
+      width: 2.8,
+      opacity: 1,
+    })
 
     wrapper.unmount()
   })
@@ -176,6 +241,7 @@ describe('MapPage', () => {
 
     expect(lastChartOption?.tooltip?.formatter).toBeTypeOf('function')
     const tooltip = String(lastChartOption.tooltip.formatter({ name: '440300' }))
+    expect(tooltip).toContain('广东省 / 深圳市')
     expect(tooltip).toContain('深圳市')
     expect(tooltip).not.toContain('440300<br/>')
     expect(tooltip).toContain('连接数: 0')
@@ -290,6 +356,44 @@ describe('MapPage', () => {
     expect(lastChartOption?.series?.[0]?.type).toBe('map')
     expect(lastChartOption?.series?.[1]?.type).toBe('lines')
     expect(lastChartOption?.series?.[1]?.name).toBe('省界')
+
+    wrapper.unmount()
+  })
+
+  it('shows current returned city count in metadata as an upper-bound hint', async () => {
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    expect(wrapper.text()).toContain('当前窗口返回城市数：1（Top 1000 为上限，不是保底）')
+
+    wrapper.unmount()
+  })
+
+  it('shows all returned cities when below the selected Top limit instead of truncating to 12', async () => {
+    const fixtures = buildCityFixtures(15)
+    stubFetch(fixtures)
+
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    expect(wrapper.findAll('.city-list li')).toHaveLength(15)
+    expect(wrapper.text()).toContain('当前窗口返回城市数：15（Top 1000 为上限，不是保底）')
+
+    wrapper.unmount()
+  })
+
+  it('caps the city list by the selected Top limit when more cities are returned', async () => {
+    const fixtures = buildCityFixtures(120)
+    stubFetch(fixtures)
+
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    await wrapper.findAll('select')[6].setValue('100')
+    await flushPage()
+
+    expect(wrapper.findAll('.city-list li')).toHaveLength(100)
+    expect(wrapper.text()).toContain('当前窗口返回城市数：100（Top 100 为上限，不是保底）')
 
     wrapper.unmount()
   })
