@@ -121,6 +121,19 @@ describe('MapPage', () => {
     wrapper.unmount()
   })
 
+  it('does not render inferred province boundary overlay', async () => {
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    expect(lastChartOption?.series?.filter((series: any) => series.type === 'map')).toHaveLength(1)
+    expect(lastChartOption?.series?.some((series: any) => series.type === 'lines')).toBe(false)
+
+    const tooltip = String(lastChartOption.tooltip.formatter({ name: '440300' }))
+    expect(tooltip).toContain('深圳市')
+
+    wrapper.unmount()
+  })
+
   it('switches metric to bytes and renders human-readable units', async () => {
     stubFetch({
       apiItems: [
@@ -258,15 +271,14 @@ describe('MapPage', () => {
     wrapper.unmount()
   })
 
-  it('adds a thicker province-boundary overlay on top of city polygons', async () => {
+  it('keeps the geo base layer without a province-boundary overlay', async () => {
     const wrapper = mount(MapPage)
     await flushPage()
 
     expect(lastChartOption?.geo?.map).toBe('china-cities')
-    expect(lastChartOption?.series?.[1]?.type).toBe('lines')
-    expect(lastChartOption?.series?.[1]?.coordinateSystem).toBe('geo')
-    expect(lastChartOption?.series?.[1]?.lineStyle?.width).toBeGreaterThan(lastChartOption?.series?.[0]?.itemStyle?.borderWidth)
-    expect(lastChartOption?.series?.[1]?.data?.length).toBeGreaterThan(0)
+    expect(lastChartOption?.series).toHaveLength(1)
+    expect(lastChartOption?.series?.[0]?.type).toBe('map')
+    expect(lastChartOption?.series?.some((series: any) => series.type === 'lines')).toBe(false)
 
     wrapper.unmount()
   })
