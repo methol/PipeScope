@@ -40,20 +40,16 @@ let mapLoading: Promise<void> | null = null
 const title = computed(() => (metric.value === 'bytes' ? '城市流量热度（市级边界）' : '城市连接热度（市级边界）'))
 const emptyHint = computed(() => (!loading.value && !error.value && cityItems.value.length === 0 ? '当前窗口暂无城市指标数据' : ''))
 const returnedCityCountText = computed(
-  () => `当前窗口返回城市数：${visibleCityItems.value.length}（Top ${resolveEffectiveLimit()} 为上限，不是保底）`,
+  () => `当前窗口返回 ${cityItems.value.length} 城市（Top ${resolveEffectiveLimit()} 为上限，不是保底）`,
 )
 const displayValue = (v: number) => (metric.value === 'bytes' ? formatBytes(v) : String(v))
 
-function resolveEffectiveLimitValue(): number {
+function resolveEffectiveLimit(): string {
   const parsedPreset = Number(limit.value)
   if (Number.isFinite(parsedPreset) && parsedPreset > 0) {
-    return Math.floor(parsedPreset)
+    return String(Math.floor(parsedPreset))
   }
-  return 1000
-}
-
-function resolveEffectiveLimit(): string {
-  return String(resolveEffectiveLimitValue())
+  return '1000'
 }
 
 function metricValue(item: CityMetricsItem, field: 'conn' | 'bytes'): number {
@@ -68,8 +64,6 @@ const sortedCityItems = computed<CityMetricsItem[]>(() => {
     return String(a.adcode || '').localeCompare(String(b.adcode || ''))
   })
 })
-
-const visibleCityItems = computed<CityMetricsItem[]>(() => sortedCityItems.value.slice(0, resolveEffectiveLimitValue()))
 
 async function loadOptions() {
   optionsLoading.value = true
@@ -382,7 +376,7 @@ function onResize() {
     <div ref="chartEl" class="chart"></div>
 
     <ul class="city-list">
-      <li v-for="item in visibleCityItems" :key="item.adcode + item.city">
+      <li v-for="item in sortedCityItems.slice(0, 12)" :key="item.adcode + item.city">
         <span>{{ item.province }} / {{ item.city }}</span>
         <strong>连接 {{ item.conn }} · 流量 {{ formatBytes(item.bytes) }}</strong>
       </li>

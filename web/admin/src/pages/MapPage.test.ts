@@ -26,42 +26,6 @@ const geoJSON = {
   ],
 }
 
-function buildCityFixtures(count: number) {
-  const features = Array.from({ length: count }, (_, index) => {
-    const adcode = String(440300 + index)
-    const lng = 113 + index * 0.05
-    const lat = 22 + index * 0.02
-    return {
-      properties: {
-        province: '广东省',
-        city: `测试市${index + 1}`,
-        adcode,
-      },
-      geometry: {
-        type: 'Polygon',
-        coordinates: [[[lng, lat], [lng + 0.03, lat], [lng + 0.03, lat + 0.03], [lng, lat + 0.03], [lng, lat]]],
-      },
-    }
-  })
-
-  const apiItems = features.map((feature, index) => ({
-    adcode: feature.properties.adcode,
-    province: String(feature.properties.province),
-    city: String(feature.properties.city),
-    lat: 22 + index * 0.02,
-    lng: 113 + index * 0.05,
-    value: count - index,
-  }))
-
-  return {
-    geoJSON: {
-      type: 'FeatureCollection',
-      features,
-    },
-    apiItems,
-  }
-}
-
 function stubFetch(options?: {
   geoOK?: boolean
   cityOK?: boolean
@@ -364,36 +328,7 @@ describe('MapPage', () => {
     const wrapper = mount(MapPage)
     await flushPage()
 
-    expect(wrapper.text()).toContain('当前窗口返回城市数：1（Top 1000 为上限，不是保底）')
-
-    wrapper.unmount()
-  })
-
-  it('shows all returned cities when below the selected Top limit instead of truncating to 12', async () => {
-    const fixtures = buildCityFixtures(15)
-    stubFetch(fixtures)
-
-    const wrapper = mount(MapPage)
-    await flushPage()
-
-    expect(wrapper.findAll('.city-list li')).toHaveLength(15)
-    expect(wrapper.text()).toContain('当前窗口返回城市数：15（Top 1000 为上限，不是保底）')
-
-    wrapper.unmount()
-  })
-
-  it('caps the city list by the selected Top limit when more cities are returned', async () => {
-    const fixtures = buildCityFixtures(120)
-    stubFetch(fixtures)
-
-    const wrapper = mount(MapPage)
-    await flushPage()
-
-    await wrapper.findAll('select')[6].setValue('100')
-    await flushPage()
-
-    expect(wrapper.findAll('.city-list li')).toHaveLength(100)
-    expect(wrapper.text()).toContain('当前窗口返回城市数：100（Top 100 为上限，不是保底）')
+    expect(wrapper.text()).toContain('当前窗口返回 1 城市（Top 1000 为上限，不是保底）')
 
     wrapper.unmount()
   })
