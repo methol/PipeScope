@@ -109,3 +109,159 @@
 - 测试面：
   - `npm test -- --run src/pages/mapCity.test.ts src/pages/MapPage.test.ts` 当前为 PASS（15 tests）。
   - 现有测试只能证明配置结构和命名逻辑通过，无法证明真实地图不会出现“整图蓝紫化/省界线网化”的视觉回归。
+
+## Stage 2 - Writing Plans
+
+I'm using the writing-plans skill to create the implementation plan.
+
+### 计划结论
+
+- 已将实现计划保存到 `docs/superpowers/plans/2026-03-18-map-province-boundary-render-fix.md`。
+- 方案选择：优先执行方案 1，直接禁用 `MapPage.vue` 中推导出来的省界 `lines` overlay。
+- 保留项明确写入计划：
+  - 不回滚 `v0.1.16` 的 hover 标签修复
+  - 不回滚 `city_key` / 6 位 adcode join 修复
+  - 不使用 `git worktree`
+  - review 最多 3 轮，且 Stage 4 不用 `codex review` 子命令
+
+### 本阶段提交要求执行情况
+
+- 计划提交信息：`docs: add map province boundary render fix plan`
+- 实际结果：提交被当前沙箱阻止，`git add` / `git commit` 无法写入 `.git/index.lock`
+
+## Stage 3 - Executing Plans
+
+I'm using the executing-plans skill to implement this plan.
+
+### 执行摘要
+
+- 按 `test-driven-development` 先在 `web/admin/src/pages/MapPage.test.ts` 增加失败用例：
+  - `does not render inferred province boundary overlay`
+- RED 阶段确认当前实现仍输出 `type === 'lines'` 的 overlay。
+- GREEN 阶段在 `web/admin/src/pages/MapPage.vue` 移除省界 overlay 相关链路，仅保留城市热度图与 hover/tooltip 命名逻辑。
+- 为了让回归集和新验收一致，把旧测试 `adds a thicker province-boundary overlay on top of city polygons` 改为 `keeps the geo base layer without a province-boundary overlay`。
+
+### 实际改动
+
+- `web/admin/src/pages/MapPage.vue`
+  - 删除 `extractProvinceBoundarySegments` import
+  - 删除 `provinceBoundarySegments` state
+  - 删除 `ensureChinaMap()` 中的省界线段提取
+  - 删除 `render()` 中的 `provinceBoundaryData`
+  - 删除 ECharts `series[1]` 的 `lines` overlay
+- `web/admin/src/pages/MapPage.test.ts`
+  - 新增“不会渲染推导省界 overlay”的回归测试
+  - 更新旧的 overlay 测试，使其断言现在只保留城市底图 `map` series
+
+### 验证证据
+
+RED:
+
+```bash
+npm test -- --run src/pages/MapPage.test.ts -t "does not render inferred province boundary overlay"
+```
+
+Result:
+
+```text
+FAIL  src/pages/MapPage.test.ts > MapPage > does not render inferred province boundary overlay
+AssertionError: expected true to be false
+```
+
+GREEN:
+
+```bash
+npm test -- --run src/pages/MapPage.test.ts -t "does not render inferred province boundary overlay"
+```
+
+Result:
+
+```text
+✓ src/pages/MapPage.test.ts (10 tests | 9 skipped)
+```
+
+Regression suite:
+
+```bash
+npm test -- --run src/pages/mapCity.test.ts src/pages/MapPage.test.ts
+```
+
+Result:
+
+```text
+✓ src/pages/mapCity.test.ts (6 tests)
+✓ src/pages/MapPage.test.ts (10 tests)
+Tests  16 passed (16)
+```
+
+### 阶段结论
+
+- 方案 1 已落地：地图页不再渲染由市级 GeoJSON 反推的省界 overlay。
+- `city_key` join、tooltip 城市名、hover label 与直管地区命名保护测试继续通过。
+- 本次修复只解决“整图蓝紫化/省界线网化”的直接原因；若后续仍希望展示省界，需要改用真实省级边界数据源或更稳健的拓扑算法，而不是恢复当前反推链路。
+
+### 本阶段提交要求执行情况
+
+- 计划提交信息：`fix(map): disable inferred province boundary overlay`
+- 实际结果：提交仍被当前沙箱阻止，错误为 `fatal: Unable to create '.git/index.lock': Operation not permitted`
+
+## Stage 4 - Requesting Code Review
+
+I'm using the requesting-code-review skill to review the current diff with Codex's regular capabilities.
+
+### Review scope
+
+- Reviewed diff base: `0bb6ec2eb4a57724ad786367828b168c97780a6a`
+- Reviewed files:
+  - `web/admin/src/pages/MapPage.vue`
+  - `web/admin/src/pages/MapPage.test.ts`
+  - `tasks/2026-03-18-map-province-boundary-render.md`
+- Review method: manual code review against Stage 1 acceptance criteria; no `codex review` subcommand
+
+### Findings
+
+- no actionable issues
+
+### Review conclusion
+
+- 当前 diff 是最小相关修复：只禁用了推导省界 overlay，没有扩大到 `mapCity.ts` 的 adcode join、tooltip、hover label 逻辑。
+- 现有“直管地区 city key 不冲突”和“无数据区域仍显示可读城市名”的测试仍在，且 Stage 3 回归集已通过。
+- 额外执行 `npm run build` 也通过，只有既有 bundle size warning，没有新增构建错误。
+
+### 本阶段提交要求执行情况
+
+- 计划提交信息：`docs: record map boundary render review findings`
+- 实际结果：提交仍被当前沙箱阻止，错误为 `fatal: Unable to create '.git/index.lock': Operation not permitted`
+
+## Stage 5 - Receiving Code Review
+
+I'm using the receiving-code-review skill to verify and address the Stage 4 result.
+
+### 对 review 结果的技术核验
+
+- Round 1 的 review 结论是 `no actionable issues`，因此没有待验证真伪的具体缺陷项。
+- 重新核对 `MapPage.vue` 当前 diff：
+  - 只删除了省界 overlay 相关 import/state/series
+  - `normalizeCityGeoFeatures(...)`、`createCityJoinKeyResolver(...)`、tooltip formatter、hover label formatter 均未改动
+- 重新核对 `MapPage.test.ts`：
+  - 新增“不会渲染推导省界 overlay”的回归测试
+  - 旧的 overlay 测试已改写为“仍保留 geo 底图但无 province overlay”
+  - 既有 hover/city key 保护测试仍保留
+
+### 动作与验证
+
+- 本轮无新增代码修复
+- 复用 Stage 3 的地图相关回归测试，并补充 build 验证：
+  - `npm test -- --run src/pages/mapCity.test.ts src/pages/MapPage.test.ts` -> PASS
+  - `npm run build` -> PASS
+
+### Review round outcome
+
+- Round 1: no actionable issues
+- 累计 review 轮次：1/3
+- Round 2 / Round 3：无需执行
+
+### 本阶段提交要求执行情况
+
+- 计划提交信息：`docs: close map boundary render review round`
+- 实际结果：提交仍被当前沙箱阻止，错误为 `fatal: Unable to create '.git/index.lock': Operation not permitted`
