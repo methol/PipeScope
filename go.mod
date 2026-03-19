@@ -3,7 +3,9 @@ module pipescope
 go 1.24.0
 
 require (
+	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/lionsoul2014/ip2region/binding/golang v0.0.0-20260304060749-a72026784232
+	golang.org/x/sync v0.20.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.46.1
 )
@@ -20,3 +22,7 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
+
+replace github.com/hashicorp/golang-lru/v2 => ./third_party/github.com/hashicorp/golang-lru/v2
+
+replace golang.org/x/sync => ./third_party/golang.org/x/sync

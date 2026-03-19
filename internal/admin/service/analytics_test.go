@@ -3,6 +3,9 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"reflect"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -123,6 +126,167 @@ func TestAnalyticsOptionsTracksCrossFiltersInSQLite(t *testing.T) {
 	}
 	if len(res.Statuses) != 1 || res.Statuses[0] != "err" {
 		t.Fatalf("unexpected statuses: %+v", res.Statuses)
+	}
+}
+
+func TestAnalyticsOptionsCachesSuccessfulResponses(t *testing.T) {
+	svc := New(nil)
+	want := AnalyticsOptions{
+		Rules:     []string{"r1"},
+		Provinces: []string{"广东"},
+		Cities:    []AnalyticsCityRef{{Province: "广东", City: "深圳"}},
+		Statuses:  []string{"ok"},
+	}
+	q := AnalyticsOptionsQuery{
+		Window:   time.Minute,
+		RuleID:   "r1",
+		Province: "广东",
+		City:     "深圳",
+		Status:   "ok",
+		SrcIP:    "10.0.0.8",
+	}
+	otherQ := AnalyticsOptionsQuery{
+		Window:   2 * time.Minute,
+		RuleID:   q.RuleID,
+		Province: q.Province,
+		City:     q.City,
+		Status:   q.Status,
+		SrcIP:    q.SrcIP,
+	}
+
+	var loads atomic.Int32
+	loadedQueries := make(chan AnalyticsOptionsQuery, 2)
+	svc.analyticsOptionsLoader = func(_ context.Context, got AnalyticsOptionsQuery) (AnalyticsOptions, error) {
+		loads.Add(1)
+		loadedQueries <- got
+		return want, nil
+	}
+
+	first, err := svc.AnalyticsOptions(context.Background(), q)
+	if err != nil {
+		t.Fatalf("first AnalyticsOptions: %v", err)
+	}
+	second, err := svc.AnalyticsOptions(context.Background(), q)
+	if err != nil {
+		t.Fatalf("second AnalyticsOptions: %v", err)
+	}
+
+	if loads.Load() != 1 {
+		t.Fatalf("loads=%d want=1", loads.Load())
+	}
+	if !reflect.DeepEqual(first, want) {
+		t.Fatalf("first=%+v want=%+v", first, want)
+	}
+	if !reflect.DeepEqual(second, want) {
+		t.Fatalf("second=%+v want=%+v", second, want)
+	}
+
+	_, err = svc.AnalyticsOptions(context.Background(), otherQ)
+	if err != nil {
+		t.Fatalf("third AnalyticsOptions with different key: %v", err)
+	}
+	if loads.Load() != 2 {
+		t.Fatalf("loads after different key=%d want=2", loads.Load())
+	}
+	firstLoad := <-loadedQueries
+	secondLoad := <-loadedQueries
+	if firstLoad != q {
+		t.Fatalf("first load query=%+v want=%+v", firstLoad, q)
+	}
+	if secondLoad != otherQ {
+		t.Fatalf("second load query=%+v want=%+v", secondLoad, otherQ)
+	}
+}
+
+func TestAnalyticsOptionsDoesNotCacheErrors(t *testing.T) {
+	svc := New(nil)
+	q := AnalyticsOptionsQuery{Window: time.Minute, RuleID: "r1"}
+	want := AnalyticsOptions{Rules: []string{"r1"}}
+	wantErr := errors.New("load failed")
+
+	var loads atomic.Int32
+	svc.analyticsOptionsLoader = func(_ context.Context, _ AnalyticsOptionsQuery) (AnalyticsOptions, error) {
+		if loads.Add(1) == 1 {
+			return AnalyticsOptions{}, wantErr
+		}
+		return want, nil
+	}
+
+	_, err := svc.AnalyticsOptions(context.Background(), q)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("err=%v want=%v", err, wantErr)
+	}
+
+	got, err := svc.AnalyticsOptions(context.Background(), q)
+	if err != nil {
+		t.Fatalf("second AnalyticsOptions: %v", err)
+	}
+	if loads.Load() != 2 {
+		t.Fatalf("loads=%d want=2", loads.Load())
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got=%+v want=%+v", got, want)
+	}
+}
+
+func TestAnalyticsOptionsDeduplicatesInflightRequests(t *testing.T) {
+	svc := New(nil)
+	q := AnalyticsOptionsQuery{Window: time.Minute, RuleID: "r1", Province: "广东"}
+	want := AnalyticsOptions{
+		Rules:     []string{"r1"},
+		Provinces: []string{"广东"},
+		Cities:    []AnalyticsCityRef{{Province: "广东", City: "深圳"}},
+		Statuses:  []string{"ok"},
+	}
+
+	var loads atomic.Int32
+	loadEntered := make(chan struct{}, 2)
+	releaseLoad := make(chan struct{})
+	start := make(chan struct{})
+	svc.analyticsOptionsLoader = func(_ context.Context, _ AnalyticsOptionsQuery) (AnalyticsOptions, error) {
+		loads.Add(1)
+		loadEntered <- struct{}{}
+		<-releaseLoad
+		return want, nil
+	}
+
+	results := make(chan AnalyticsOptions, 2)
+	errs := make(chan error, 2)
+	run := func() {
+		<-start
+		res, err := svc.AnalyticsOptions(context.Background(), q)
+		if err != nil {
+			errs <- err
+			return
+		}
+		results <- res
+	}
+
+	go run()
+	go run()
+	close(start)
+
+	<-loadEntered
+	select {
+	case <-loadEntered:
+		t.Fatal("loader ran twice for same in-flight query")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(releaseLoad)
+
+	for i := 0; i < 2; i++ {
+		select {
+		case err := <-errs:
+			t.Fatalf("AnalyticsOptions: %v", err)
+		case got := <-results:
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("got=%+v want=%+v", got, want)
+			}
+		}
+	}
+
+	if loads.Load() != 1 {
+		t.Fatalf("loads=%d want=1", loads.Load())
 	}
 }
 
