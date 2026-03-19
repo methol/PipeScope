@@ -252,6 +252,22 @@ describe('MapPage', () => {
     wrapper.unmount()
   })
 
+  it('renders map and sidebar inside shared bounded layout shells', async () => {
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    const mapShell = wrapper.find('.map-main-shell')
+    expect(mapShell.exists()).toBe(true)
+    expect(mapShell.find('.chart').exists()).toBe(true)
+
+    const sidebarBody = wrapper.find('.map-sidebar-body')
+    expect(sidebarBody.exists()).toBe(true)
+    expect(sidebarBody.find('.city-list-scroll').exists()).toBe(true)
+    expect(sidebarBody.find('.city-list').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
   it('uses one metric selector for map coloring and sidebar order', async () => {
     stubFetch({
       geoJSON: {

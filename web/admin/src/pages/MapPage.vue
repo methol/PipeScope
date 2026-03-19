@@ -358,48 +358,52 @@ function onResize() {
 
     <div class="map-layout">
       <div class="map-main">
-        <div ref="chartEl" class="chart"></div>
+        <div class="map-main-shell">
+          <div ref="chartEl" class="chart"></div>
+        </div>
       </div>
 
       <aside class="map-sidebar">
-        <div class="sidebar-header">
-          <p class="sidebar-eyebrow">城市统计</p>
-          <h3>{{ sidebarTitle }}</h3>
-          <p class="meta sidebar-meta" :title="returnedCityCountTitle">{{ returnedCityCountText }}</p>
-        </div>
+        <div class="map-sidebar-body">
+          <div class="sidebar-header">
+            <p class="sidebar-eyebrow">城市统计</p>
+            <h3>{{ sidebarTitle }}</h3>
+            <p class="meta sidebar-meta" :title="returnedCityCountTitle">{{ returnedCityCountText }}</p>
+          </div>
 
-        <div class="city-list-scroll">
-          <ul class="city-list">
-            <li v-for="item in sortedCityItems" :key="item.adcode + item.city">
-              <div class="city-copy">
-                <strong class="city-name">{{ item.city }}</strong>
-                <span class="city-province">{{ item.province }}</span>
-              </div>
-              <div class="city-stats">
-                <span class="city-stat city-stat-conn" :title="`连接数 ${item.conn}`">
-                  <span class="city-stat-icon city-stat-icon--conn" aria-hidden="true">
-                    <svg viewBox="0 0 16 16" focusable="false">
-                      <path d="M4 4.5h8M4 11.5h8M4 4.5l8 7" />
-                      <circle cx="4" cy="4.5" r="1.5" />
-                      <circle cx="12" cy="4.5" r="1.5" />
-                      <circle cx="12" cy="11.5" r="1.5" />
-                    </svg>
+          <div class="city-list-scroll">
+            <ul class="city-list">
+              <li v-for="item in sortedCityItems" :key="item.adcode + item.city">
+                <div class="city-copy">
+                  <strong class="city-name">{{ item.city }}</strong>
+                  <span class="city-province">{{ item.province }}</span>
+                </div>
+                <div class="city-stats">
+                  <span class="city-stat city-stat-conn" :title="`连接数 ${item.conn}`">
+                    <span class="city-stat-icon city-stat-icon--conn" aria-hidden="true">
+                      <svg viewBox="0 0 16 16" focusable="false">
+                        <path d="M4 4.5h8M4 11.5h8M4 4.5l8 7" />
+                        <circle cx="4" cy="4.5" r="1.5" />
+                        <circle cx="12" cy="4.5" r="1.5" />
+                        <circle cx="12" cy="11.5" r="1.5" />
+                      </svg>
+                    </span>
+                    <span class="sr-only">连接数</span>
+                    <span class="city-stat-value">{{ item.conn }}</span>
                   </span>
-                  <span class="sr-only">连接数</span>
-                  <span class="city-stat-value">{{ item.conn }}</span>
-                </span>
-                <span class="city-stat city-stat-bytes" :title="`流量 ${formatBytes(item.bytes)}`">
-                  <span class="city-stat-icon city-stat-icon--bytes" aria-hidden="true">
-                    <svg viewBox="0 0 16 16" focusable="false">
-                      <path d="M5 12V4M5 4 2.75 6.25M5 4l2.25 2.25M11 4v8M11 12 8.75 9.75M11 12l2.25-2.25" />
-                    </svg>
+                  <span class="city-stat city-stat-bytes" :title="`流量 ${formatBytes(item.bytes)}`">
+                    <span class="city-stat-icon city-stat-icon--bytes" aria-hidden="true">
+                      <svg viewBox="0 0 16 16" focusable="false">
+                        <path d="M5 12V4M5 4 2.75 6.25M5 4l2.25 2.25M11 4v8M11 12 8.75 9.75M11 12l2.25-2.25" />
+                      </svg>
+                    </span>
+                    <span class="sr-only">流量</span>
+                    <span class="city-stat-value">{{ formatBytes(item.bytes) }}</span>
                   </span>
-                  <span class="sr-only">流量</span>
-                  <span class="city-stat-value">{{ formatBytes(item.bytes) }}</span>
-                </span>
-              </div>
-            </li>
-          </ul>
+                </div>
+              </li>
+            </ul>
+          </div>
         </div>
       </aside>
     </div>
@@ -408,27 +412,51 @@ function onResize() {
 
 <style scoped>
 .map-layout {
+  --map-panel-height: clamp(500px, 68vh, 760px);
   margin-top: 12px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .map-main {
   min-width: 0;
+  min-height: 0;
+  height: var(--map-panel-height);
+}
+
+.map-main-shell {
+  height: 100%;
+  min-height: 0;
+}
+
+.map-main-shell .chart {
+  height: 100%;
+  min-height: 100%;
 }
 
 .map-sidebar {
   min-width: 0;
+  min-height: 0;
+  height: var(--map-panel-height);
+  display: flex;
+  flex-direction: column;
   padding-left: 16px;
   border-left: 1px solid rgba(16, 36, 63, 0.1);
+}
+
+.map-sidebar-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .sidebar-header {
   display: grid;
   gap: 4px;
-  margin-bottom: 10px;
 }
 
 .sidebar-eyebrow {
@@ -449,7 +477,8 @@ function onResize() {
 }
 
 .city-list-scroll {
-  max-height: min(60vh, 560px);
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding-right: 6px;
 }
@@ -564,11 +593,28 @@ function onResize() {
     grid-template-columns: 1fr;
   }
 
+  .map-main,
   .map-sidebar {
+    height: auto;
     padding-left: 0;
     padding-top: 14px;
     border-left: none;
     border-top: 1px solid rgba(16, 36, 63, 0.1);
+  }
+
+  .map-main {
+    padding-top: 0;
+    border-top: none;
+  }
+
+  .map-main-shell .chart {
+    min-height: 320px;
+    height: clamp(320px, 55vh, 440px);
+  }
+
+  .city-list-scroll {
+    flex: initial;
+    max-height: min(50vh, 420px);
   }
 }
 </style>
