@@ -241,6 +241,17 @@ describe('MapPage', () => {
     wrapper.unmount()
   })
 
+  it('renders city list inside a bounded scroll container', async () => {
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    const scrollArea = wrapper.find('.city-list-scroll')
+    expect(scrollArea.exists()).toBe(true)
+    expect(scrollArea.find('.city-list').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
   it('uses one metric selector for map coloring and sidebar order', async () => {
     stubFetch({
       geoJSON: {
