@@ -120,10 +120,20 @@ async function load() {
   try {
     await ensureChinaMap()
     const effectiveLimit = resolveEffectiveLimit()
-    const [connItems, bytesItems] = await Promise.all([
-      fetchChinaMap({ window: windowText.value, metric: 'conn', limit: effectiveLimit, rule_id: ruleID.value, status: status.value }),
-      fetchChinaMap({ window: windowText.value, metric: 'bytes', limit: effectiveLimit, rule_id: ruleID.value, status: status.value }),
-    ])
+    const connItems = await fetchChinaMap({
+      window: windowText.value,
+      metric: 'conn',
+      limit: effectiveLimit,
+      rule_id: ruleID.value,
+      status: status.value,
+    })
+    const bytesItems = await fetchChinaMap({
+      window: windowText.value,
+      metric: 'bytes',
+      limit: effectiveLimit,
+      rule_id: ruleID.value,
+      status: status.value,
+    })
 
     const itemByKey = new Map<string, CityMetricsItem>()
     for (const item of connItems) {
