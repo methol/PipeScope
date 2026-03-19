@@ -268,6 +268,20 @@ describe('MapPage', () => {
     wrapper.unmount()
   })
 
+  it('uses explicit geo bounds to reduce bottom blank space', async () => {
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    expect(lastChartOption?.geo).toMatchObject({
+      top: 16,
+      bottom: 64,
+      left: 12,
+      right: 12,
+    })
+
+    wrapper.unmount()
+  })
+
   it('uses one metric selector for map coloring and sidebar order', async () => {
     stubFetch({
       geoJSON: {

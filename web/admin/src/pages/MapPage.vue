@@ -187,6 +187,10 @@ function render() {
       map: CHINA_MAP_NAME,
       roam: true,
       silent: false,
+      top: 16,
+      bottom: 64,
+      left: 12,
+      right: 12,
       itemStyle: {
         areaColor: '#f4f8ff',
         borderColor: '#99afc9',
@@ -412,7 +416,7 @@ function onResize() {
 
 <style scoped>
 .map-layout {
-  --map-panel-height: clamp(500px, 68vh, 760px);
+  --map-panel-height: clamp(440px, 60vh, 580px);
   margin-top: 12px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
