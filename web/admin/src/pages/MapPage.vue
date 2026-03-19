@@ -449,6 +449,7 @@ function onResize() {
   flex-direction: column;
   padding-left: 16px;
   border-left: 1px solid rgba(16, 36, 63, 0.1);
+  overflow: hidden;
 }
 
 .map-sidebar-body {
@@ -457,6 +458,7 @@ function onResize() {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow: hidden;
 }
 
 .sidebar-header {
@@ -485,6 +487,7 @@ function onResize() {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding-right: 6px;
 }
 
