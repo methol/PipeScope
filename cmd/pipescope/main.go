@@ -163,7 +163,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 const (
 	sqliteBusyTimeoutMS    = 3000
-	adminQueryTimeout      = 3 * time.Second
+	adminQueryTimeout      = 6 * time.Second
 	adminReadHeaderTimeout = 5 * time.Second
 	adminWriteTimeout      = 5 * time.Second
 )
