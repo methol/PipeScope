@@ -222,14 +222,20 @@ describe('MapPage', () => {
 
     const firstItem = wrapper.get('.city-list li')
     expect(firstItem.text()).toContain('深圳市')
-    expect(firstItem.text()).toContain('连 5')
-    expect(firstItem.text()).toContain('流 5.00 KB')
+    expect(firstItem.text()).not.toContain('连 5')
+    expect(firstItem.text()).not.toContain('流 5.00 KB')
     expect(firstItem.text()).not.toContain('连接 5 · 流量 5.00 KB')
 
     const chips = firstItem.findAll('.city-stat')
     expect(chips).toHaveLength(2)
     expect(chips[0].attributes('title')).toBe('连接数 5')
     expect(chips[1].attributes('title')).toBe('流量 5.00 KB')
+    expect(firstItem.findAll('.city-stat-icon')).toHaveLength(2)
+    expect(firstItem.find('.city-stat-icon--conn').exists()).toBe(true)
+    expect(firstItem.find('.city-stat-icon--bytes').exists()).toBe(true)
+    expect(firstItem.findAll('.city-stat-icon').every((icon) => icon.attributes('aria-hidden') === 'true')).toBe(true)
+    expect(firstItem.findAll('.sr-only').map((node) => node.text())).toEqual(['连接数', '流量'])
+    expect(firstItem.findAll('.city-stat-value').map((node) => node.text())).toEqual(['5', '5.00 KB'])
     expect(wrapper.text()).toContain('已载入 1 城市 · Top 1000 上限')
 
     wrapper.unmount()

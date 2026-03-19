@@ -375,8 +375,27 @@ function onResize() {
               <span class="city-province">{{ item.province }}</span>
             </div>
             <div class="city-stats">
-              <span class="city-stat" :title="`连接数 ${item.conn}`">连 {{ item.conn }}</span>
-              <span class="city-stat city-stat-bytes" :title="`流量 ${formatBytes(item.bytes)}`">流 {{ formatBytes(item.bytes) }}</span>
+              <span class="city-stat city-stat-conn" :title="`连接数 ${item.conn}`">
+                <span class="city-stat-icon city-stat-icon--conn" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" focusable="false">
+                    <path d="M4 4.5h8M4 11.5h8M4 4.5l8 7" />
+                    <circle cx="4" cy="4.5" r="1.5" />
+                    <circle cx="12" cy="4.5" r="1.5" />
+                    <circle cx="12" cy="11.5" r="1.5" />
+                  </svg>
+                </span>
+                <span class="sr-only">连接数</span>
+                <span class="city-stat-value">{{ item.conn }}</span>
+              </span>
+              <span class="city-stat city-stat-bytes" :title="`流量 ${formatBytes(item.bytes)}`">
+                <span class="city-stat-icon city-stat-icon--bytes" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" focusable="false">
+                    <path d="M5 12V4M5 4 2.75 6.25M5 4l2.25 2.25M11 4v8M11 12 8.75 9.75M11 12l2.25-2.25" />
+                  </svg>
+                </span>
+                <span class="sr-only">流量</span>
+                <span class="city-stat-value">{{ formatBytes(item.bytes) }}</span>
+              </span>
             </div>
           </li>
         </ul>
@@ -462,7 +481,8 @@ function onResize() {
 .city-stat {
   display: inline-flex;
   align-items: center;
-  padding: 4px 8px;
+  gap: 7px;
+  padding: 4px 10px 4px 6px;
   border-radius: 999px;
   background: rgba(31, 122, 140, 0.12);
   color: var(--ink);
@@ -471,8 +491,64 @@ function onResize() {
   white-space: nowrap;
 }
 
+.city-stat-conn {
+  background: linear-gradient(135deg, rgba(34, 93, 184, 0.14), rgba(34, 93, 184, 0.08));
+}
+
 .city-stat-bytes {
-  background: rgba(255, 140, 66, 0.14);
+  background: linear-gradient(135deg, rgba(255, 140, 66, 0.2), rgba(255, 140, 66, 0.08));
+}
+
+.city-stat-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  flex: 0 0 18px;
+}
+
+.city-stat-icon svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.4;
+}
+
+.city-stat-icon--conn {
+  background: rgba(34, 93, 184, 0.14);
+  color: #225db8;
+}
+
+.city-stat-icon--conn svg circle {
+  fill: currentColor;
+  stroke-width: 0;
+}
+
+.city-stat-icon--bytes {
+  background: rgba(255, 140, 66, 0.18);
+  color: #d66724;
+}
+
+.city-stat-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 @media (max-width: 980px) {
