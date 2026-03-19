@@ -525,6 +525,7 @@ function onResize() {
 }
 
 .city-stat {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 7px;
