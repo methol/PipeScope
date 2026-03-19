@@ -10,10 +10,8 @@ const CHINA_GEOJSON_URL = '/maps/china-cities.geojson'
 
 type CityMetricsItem = MapPoint & { conn: number; bytes: number }
 
-const windowText = ref('1h')
+const windowText = ref('1d')
 const metric = ref('conn')
-const sortBy = ref<'conn' | 'bytes'>('conn')
-const sortOrder = ref<'desc' | 'asc'>('desc')
 const limit = ref('1000')
 const ruleID = ref('')
 const status = ref('')
@@ -38,11 +36,12 @@ let mapReady = false
 let mapLoading: Promise<void> | null = null
 
 const title = computed(() => (metric.value === 'bytes' ? '城市流量热度（市级边界）' : '城市连接热度（市级边界）'))
+const sidebarTitle = computed(() => (metric.value === 'bytes' ? '按流量排序' : '按连接数排序'))
 const emptyHint = computed(() => (!loading.value && !error.value && cityItems.value.length === 0 ? '当前窗口暂无城市指标数据' : ''))
-const returnedCityCountText = computed(
-  () => `当前窗口返回 ${cityItems.value.length} 城市（Top ${resolveEffectiveLimit()} 为上限，不是保底）`,
+const returnedCityCountText = computed(() => `已载入 ${cityItems.value.length} 城市 · Top ${resolveEffectiveLimit()} 上限`)
+const returnedCityCountTitle = computed(
+  () => `当前窗口实际返回 ${cityItems.value.length} 个城市；Top ${resolveEffectiveLimit()} 只是返回上限，不保证达到该数量。`,
 )
-const displayValue = (v: number) => (metric.value === 'bytes' ? formatBytes(v) : String(v))
 
 function resolveEffectiveLimit(): string {
   const parsedPreset = Number(limit.value)
@@ -57,10 +56,9 @@ function metricValue(item: CityMetricsItem, field: 'conn' | 'bytes'): number {
 }
 
 const sortedCityItems = computed<CityMetricsItem[]>(() => {
-  const order = sortOrder.value === 'asc' ? 1 : -1
   return [...cityItems.value].sort((a, b) => {
-    const delta = metricValue(a, sortBy.value) - metricValue(b, sortBy.value)
-    if (delta !== 0) return delta * order
+    const delta = metricValue(b, metric.value) - metricValue(a, metric.value)
+    if (delta !== 0) return delta
     return String(a.adcode || '').localeCompare(String(b.adcode || ''))
   })
 })
@@ -279,7 +277,7 @@ watch([ruleID, status, limit], () => {
   void load()
 })
 
-watch([metric, sortBy, sortOrder], () => {
+watch(metric, () => {
   render()
 })
 
@@ -333,24 +331,10 @@ function onResize() {
           </select>
         </label>
         <label>
-          地图着色
+          指标
           <select v-model="metric">
-            <option value="conn">按连接数</option>
-            <option value="bytes">按流量</option>
-          </select>
-        </label>
-        <label>
-          排序
-          <select v-model="sortBy">
             <option value="conn">连接数</option>
             <option value="bytes">流量</option>
-          </select>
-        </label>
-        <label>
-          顺序
-          <select v-model="sortOrder">
-            <option value="desc">降序</option>
-            <option value="asc">升序</option>
           </select>
         </label>
         <label>
@@ -367,19 +351,140 @@ function onResize() {
     </div>
 
     <p class="meta">{{ title }} · 分析型页面（不自动刷新）</p>
-    <p class="meta">{{ returnedCityCountText }}</p>
     <p v-if="optionsLoading" class="meta">筛选项加载中...</p>
     <p v-if="loading" class="meta">加载中...</p>
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="emptyHint" class="meta">{{ emptyHint }}</p>
 
-    <div ref="chartEl" class="chart"></div>
+    <div class="map-layout">
+      <div class="map-main">
+        <div ref="chartEl" class="chart"></div>
+      </div>
 
-    <ul class="city-list">
-      <li v-for="item in sortedCityItems" :key="item.adcode + item.city">
-        <span>{{ item.province }} / {{ item.city }}</span>
-        <strong>连接 {{ item.conn }} · 流量 {{ formatBytes(item.bytes) }}</strong>
-      </li>
-    </ul>
+      <aside class="map-sidebar">
+        <div class="sidebar-header">
+          <p class="sidebar-eyebrow">城市统计</p>
+          <h3>{{ sidebarTitle }}</h3>
+          <p class="meta sidebar-meta" :title="returnedCityCountTitle">{{ returnedCityCountText }}</p>
+        </div>
+
+        <ul class="city-list">
+          <li v-for="item in sortedCityItems" :key="item.adcode + item.city">
+            <div class="city-copy">
+              <strong class="city-name">{{ item.city }}</strong>
+              <span class="city-province">{{ item.province }}</span>
+            </div>
+            <div class="city-stats">
+              <span class="city-stat" :title="`连接数 ${item.conn}`">连 {{ item.conn }}</span>
+              <span class="city-stat city-stat-bytes" :title="`流量 ${formatBytes(item.bytes)}`">流 {{ formatBytes(item.bytes) }}</span>
+            </div>
+          </li>
+        </ul>
+      </aside>
+    </div>
   </section>
 </template>
+
+<style scoped>
+.map-layout {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px;
+  align-items: start;
+}
+
+.map-main {
+  min-width: 0;
+}
+
+.map-sidebar {
+  min-width: 0;
+  padding-left: 16px;
+  border-left: 1px solid rgba(16, 36, 63, 0.1);
+}
+
+.sidebar-header {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.sidebar-eyebrow {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.sidebar-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.sidebar-meta {
+  margin: 0;
+}
+
+.city-list {
+  margin-top: 0;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.city-list li {
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.city-copy {
+  display: grid;
+  gap: 3px;
+}
+
+.city-name {
+  font-size: 14px;
+}
+
+.city-province {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.city-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.city-stat {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(31, 122, 140, 0.12);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.city-stat-bytes {
+  background: rgba(255, 140, 66, 0.14);
+}
+
+@media (max-width: 980px) {
+  .map-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .map-sidebar {
+    padding-left: 0;
+    padding-top: 14px;
+    border-left: none;
+    border-top: 1px solid rgba(16, 36, 63, 0.1);
+  }
+}
+</style>
