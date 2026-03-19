@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -266,6 +268,12 @@ describe('MapPage', () => {
     expect(sidebarBody.find('.city-list').exists()).toBe(true)
 
     wrapper.unmount()
+  })
+
+  it('uses a viewport-aware desktop map height formula to better fill page height', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/pages/MapPage.vue'), 'utf8')
+
+    expect(source).toContain('--map-panel-height: clamp(500px, calc(100dvh - 320px), 680px);')
   })
 
   it('uses explicit geo bounds to reduce bottom blank space', async () => {

@@ -416,7 +416,8 @@ function onResize() {
 
 <style scoped>
 .map-layout {
-  --map-panel-height: clamp(440px, 60vh, 580px);
+  --map-panel-height: clamp(500px, calc(100vh - 320px), 680px);
+  --map-panel-height: clamp(500px, calc(100dvh - 320px), 680px);
   margin-top: 12px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
