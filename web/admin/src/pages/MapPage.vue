@@ -368,37 +368,39 @@ function onResize() {
           <p class="meta sidebar-meta" :title="returnedCityCountTitle">{{ returnedCityCountText }}</p>
         </div>
 
-        <ul class="city-list">
-          <li v-for="item in sortedCityItems" :key="item.adcode + item.city">
-            <div class="city-copy">
-              <strong class="city-name">{{ item.city }}</strong>
-              <span class="city-province">{{ item.province }}</span>
-            </div>
-            <div class="city-stats">
-              <span class="city-stat city-stat-conn" :title="`连接数 ${item.conn}`">
-                <span class="city-stat-icon city-stat-icon--conn" aria-hidden="true">
-                  <svg viewBox="0 0 16 16" focusable="false">
-                    <path d="M4 4.5h8M4 11.5h8M4 4.5l8 7" />
-                    <circle cx="4" cy="4.5" r="1.5" />
-                    <circle cx="12" cy="4.5" r="1.5" />
-                    <circle cx="12" cy="11.5" r="1.5" />
-                  </svg>
+        <div class="city-list-scroll">
+          <ul class="city-list">
+            <li v-for="item in sortedCityItems" :key="item.adcode + item.city">
+              <div class="city-copy">
+                <strong class="city-name">{{ item.city }}</strong>
+                <span class="city-province">{{ item.province }}</span>
+              </div>
+              <div class="city-stats">
+                <span class="city-stat city-stat-conn" :title="`连接数 ${item.conn}`">
+                  <span class="city-stat-icon city-stat-icon--conn" aria-hidden="true">
+                    <svg viewBox="0 0 16 16" focusable="false">
+                      <path d="M4 4.5h8M4 11.5h8M4 4.5l8 7" />
+                      <circle cx="4" cy="4.5" r="1.5" />
+                      <circle cx="12" cy="4.5" r="1.5" />
+                      <circle cx="12" cy="11.5" r="1.5" />
+                    </svg>
+                  </span>
+                  <span class="sr-only">连接数</span>
+                  <span class="city-stat-value">{{ item.conn }}</span>
                 </span>
-                <span class="sr-only">连接数</span>
-                <span class="city-stat-value">{{ item.conn }}</span>
-              </span>
-              <span class="city-stat city-stat-bytes" :title="`流量 ${formatBytes(item.bytes)}`">
-                <span class="city-stat-icon city-stat-icon--bytes" aria-hidden="true">
-                  <svg viewBox="0 0 16 16" focusable="false">
-                    <path d="M5 12V4M5 4 2.75 6.25M5 4l2.25 2.25M11 4v8M11 12 8.75 9.75M11 12l2.25-2.25" />
-                  </svg>
+                <span class="city-stat city-stat-bytes" :title="`流量 ${formatBytes(item.bytes)}`">
+                  <span class="city-stat-icon city-stat-icon--bytes" aria-hidden="true">
+                    <svg viewBox="0 0 16 16" focusable="false">
+                      <path d="M5 12V4M5 4 2.75 6.25M5 4l2.25 2.25M11 4v8M11 12 8.75 9.75M11 12l2.25-2.25" />
+                    </svg>
+                  </span>
+                  <span class="sr-only">流量</span>
+                  <span class="city-stat-value">{{ formatBytes(item.bytes) }}</span>
                 </span>
-                <span class="sr-only">流量</span>
-                <span class="city-stat-value">{{ formatBytes(item.bytes) }}</span>
-              </span>
-            </div>
-          </li>
-        </ul>
+              </div>
+            </li>
+          </ul>
+        </div>
       </aside>
     </div>
   </section>
@@ -444,6 +446,12 @@ function onResize() {
 
 .sidebar-meta {
   margin: 0;
+}
+
+.city-list-scroll {
+  max-height: min(60vh, 560px);
+  overflow-y: auto;
+  padding-right: 6px;
 }
 
 .city-list {
