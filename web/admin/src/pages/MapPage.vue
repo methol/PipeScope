@@ -423,6 +423,7 @@ function onResize() {
   grid-template-columns: minmax(0, 1fr) 300px;
   gap: 16px;
   align-items: stretch;
+  overflow: hidden;
 }
 
 .map-main {
