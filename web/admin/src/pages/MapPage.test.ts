@@ -36,7 +36,9 @@ function stubFetch(options?: {
     city: string
     lat: number
     lng: number
-    value: number
+    value?: number
+    connValue?: number
+    bytesValue?: number
   }>
 }) {
   const geoOK = options?.geoOK ?? true
@@ -81,7 +83,7 @@ function stubFetch(options?: {
         const metric = /[?&]metric=([^&]+)/.exec(url)?.[1] || 'conn'
         const items = apiItems.map((item) => ({
           ...item,
-          value: metric === 'bytes' ? item.value * 1024 : item.value,
+          value: metric === 'bytes' ? (item.bytesValue ?? (item.value ?? 0) * 1024) : (item.connValue ?? item.value ?? 0),
         }))
         return {
           ok: cityOK,
@@ -123,6 +125,18 @@ describe('MapPage', () => {
     expect(calls.some((call) => call.includes('/api/map/china'))).toBe(true)
     expect(calls.some((call) => call.includes('metric=conn'))).toBe(true)
     expect(calls.some((call) => call.includes('metric=bytes'))).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('defaults to 1d window requests', async () => {
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    const calls = (fetch as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]))
+    const apiCalls = calls.filter((call) => call.includes('/api/'))
+    expect(apiCalls.length).toBeGreaterThan(0)
+    expect(apiCalls.every((call) => call.includes('window=1d'))).toBe(true)
 
     wrapper.unmount()
   })
@@ -194,6 +208,89 @@ describe('MapPage', () => {
     const calls = (fetch as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]))
     expect(calls.some((call) => call.includes('metric=bytes'))).toBe(true)
     expect(wrapper.text()).toContain('2.00 MB')
+
+    wrapper.unmount()
+  })
+
+  it('renders compact city stats in the right sidebar', async () => {
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    expect(wrapper.find('.map-layout').exists()).toBe(true)
+    expect(wrapper.find('.map-sidebar .city-list').exists()).toBe(true)
+    expect(wrapper.find('.map-main .city-list').exists()).toBe(false)
+
+    const firstItem = wrapper.get('.city-list li')
+    expect(firstItem.text()).toContain('深圳市')
+    expect(firstItem.text()).not.toContain('连 5')
+    expect(firstItem.text()).not.toContain('流 5.00 KB')
+    expect(firstItem.text()).not.toContain('连接 5 · 流量 5.00 KB')
+
+    const chips = firstItem.findAll('.city-stat')
+    expect(chips).toHaveLength(2)
+    expect(chips[0].attributes('title')).toBe('连接数 5')
+    expect(chips[1].attributes('title')).toBe('流量 5.00 KB')
+    expect(firstItem.findAll('.city-stat-icon')).toHaveLength(2)
+    expect(firstItem.find('.city-stat-icon--conn').exists()).toBe(true)
+    expect(firstItem.find('.city-stat-icon--bytes').exists()).toBe(true)
+    expect(firstItem.findAll('.city-stat-icon').every((icon) => icon.attributes('aria-hidden') === 'true')).toBe(true)
+    expect(firstItem.findAll('.sr-only').map((node) => node.text())).toEqual(['连接数', '流量'])
+    expect(firstItem.findAll('.city-stat-value').map((node) => node.text())).toEqual(['5', '5.00 KB'])
+    expect(wrapper.text()).toContain('已载入 1 城市 · Top 1000 上限')
+
+    wrapper.unmount()
+  })
+
+  it('uses one metric selector for map coloring and sidebar order', async () => {
+    stubFetch({
+      geoJSON: {
+        type: 'FeatureCollection',
+        features: [
+          {
+            properties: { province: '广东省', city: '深圳市', adcode: '440300' },
+            geometry: { type: 'Polygon', coordinates: [[[113, 22], [114, 22], [114, 23], [113, 23], [113, 22]]] },
+          },
+          {
+            properties: { province: '广东省', city: '广州市', adcode: '440100' },
+            geometry: { type: 'Polygon', coordinates: [[[112, 23], [113, 23], [113, 24], [112, 24], [112, 23]]] },
+          },
+        ],
+      },
+      apiItems: [
+        {
+          adcode: '440300',
+          province: '广东省',
+          city: '深圳市',
+          lat: 22.5431,
+          lng: 114.0579,
+          connValue: 20,
+          bytesValue: 1024,
+        },
+        {
+          adcode: '440100',
+          province: '广东省',
+          city: '广州市',
+          lat: 23.1291,
+          lng: 113.2644,
+          connValue: 5,
+          bytesValue: 4096,
+        },
+      ],
+    })
+
+    const wrapper = mount(MapPage)
+    await flushPage()
+
+    const listBefore = wrapper.findAll('.city-list li').map((item) => item.text())
+    expect(listBefore[0]).toContain('深圳市')
+    expect(wrapper.findAll('select')).toHaveLength(5)
+
+    await wrapper.findAll('select')[3].setValue('bytes')
+    await flushPage()
+
+    const listAfter = wrapper.findAll('.city-list li').map((item) => item.text())
+    expect(listAfter[0]).toContain('广州市')
+    expect(lastChartOption?.visualMap?.formatter(4096)).toBe('4.00 KB')
 
     wrapper.unmount()
   })
@@ -324,11 +421,11 @@ describe('MapPage', () => {
     wrapper.unmount()
   })
 
-  it('shows current returned city count in metadata as an upper-bound hint', async () => {
+  it('shows current returned city count in compact metadata as an upper-bound hint', async () => {
     const wrapper = mount(MapPage)
     await flushPage()
 
-    expect(wrapper.text()).toContain('当前窗口返回 1 城市（Top 1000 为上限，不是保底）')
+    expect(wrapper.text()).toContain('已载入 1 城市 · Top 1000 上限')
 
     wrapper.unmount()
   })
