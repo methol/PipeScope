@@ -17,14 +17,17 @@ func clampListLimit(limit int) int {
 }
 
 type Service struct {
-	db  *sql.DB
-	now func() time.Time
+	db                     *sql.DB
+	now                    func() time.Time
+	analyticsOptionsCache  *analyticsOptionsCache
+	analyticsOptionsLoader analyticsOptionsLoader
 }
 
 func New(db *sql.DB) *Service {
 	return &Service{
-		db:  db,
-		now: time.Now,
+		db:                    db,
+		now:                   time.Now,
+		analyticsOptionsCache: newAnalyticsOptionsCache(),
 	}
 }
 
@@ -231,6 +234,21 @@ ORDER BY v DESC
 }
 
 func (s *Service) AnalyticsOptions(ctx context.Context, q AnalyticsOptionsQuery) (AnalyticsOptions, error) {
+	if s.analyticsOptionsCache == nil {
+		s.analyticsOptionsCache = newAnalyticsOptionsCache()
+	}
+
+	return s.analyticsOptionsCache.GetOrLoad(ctx, q, s.analyticsOptionsQueryLoader())
+}
+
+func (s *Service) analyticsOptionsQueryLoader() analyticsOptionsLoader {
+	if s.analyticsOptionsLoader != nil {
+		return s.analyticsOptionsLoader
+	}
+	return s.loadAnalyticsOptions
+}
+
+func (s *Service) loadAnalyticsOptions(ctx context.Context, q AnalyticsOptionsQuery) (AnalyticsOptions, error) {
 	result := AnalyticsOptions{
 		Rules:     []string{},
 		Provinces: []string{},
