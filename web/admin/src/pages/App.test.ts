@@ -8,11 +8,13 @@ vi.mock('./SessionsPage.vue', () => ({ default: { template: '<div data-testid="r
 vi.mock('./AnalyticsPage.vue', () => ({ default: { template: '<div data-testid="analytics-page">analytics</div>' } }))
 
 describe('App tabs', () => {
-  it('renders realtime and analytics tabs and switches pages', async () => {
+  it('renders statistics tab label as 统计', async () => {
     const wrapper = mount(App)
     expect(wrapper.find('[data-testid="map-page"]').exists()).toBe(true)
 
     const buttons = wrapper.findAll('button')
+    expect(buttons[3].text()).toBe('统计')
+
     await buttons[2].trigger('click')
     expect(wrapper.find('[data-testid="realtime-page"]').exists()).toBe(true)
 

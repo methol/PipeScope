@@ -103,6 +103,16 @@ async function flushPage() {
   await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve
+    reject = innerReject
+  })
+  return { promise, resolve, reject }
+}
+
 describe('MapPage', () => {
   beforeEach(() => {
     lastChartOption = null
@@ -238,7 +248,7 @@ describe('MapPage', () => {
     expect(firstItem.findAll('.city-stat-icon').every((icon) => icon.attributes('aria-hidden') === 'true')).toBe(true)
     expect(firstItem.findAll('.sr-only').map((node) => node.text())).toEqual(['连接数', '流量'])
     expect(firstItem.findAll('.city-stat-value').map((node) => node.text())).toEqual(['5', '5.00 KB'])
-    expect(wrapper.text()).toContain('已载入 1 城市 · Top 1000 上限')
+    expect(wrapper.text()).not.toContain('已载入 1 城市 · Top 1000 上限')
 
     wrapper.unmount()
   })
@@ -470,13 +480,79 @@ describe('MapPage', () => {
     wrapper.unmount()
   })
 
-  it('shows current returned city count in compact metadata as an upper-bound hint', async () => {
-    const wrapper = mount(MapPage)
+  it('omits redundant map meta hints while preserving loading error and empty-state messages', async () => {
+    const optionsRequest = deferred<{
+      ok: boolean
+      status: number
+      json: () => Promise<any>
+    }>()
+    const geoRequest = deferred<{
+      ok: boolean
+      status: number
+      json: () => Promise<any>
+    }>()
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input)
+        if (url.includes('/api/analytics/options?')) {
+          return optionsRequest.promise
+        }
+        if (url.includes('/maps/china-cities.geojson')) {
+          return geoRequest.promise
+        }
+        if (url.includes('/api/map/china')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ items: [] }),
+          }
+        }
+        throw new Error(`unexpected fetch url: ${url}`)
+      }),
+    )
+
+    const loadingWrapper = mount(MapPage)
     await flushPage()
 
-    expect(wrapper.text()).toContain('已载入 1 城市 · Top 1000 上限')
+    expect(loadingWrapper.text()).not.toContain('城市连接热度（市级边界） · 分析型页面（不自动刷新）')
+    expect(loadingWrapper.text()).not.toContain('已载入 1 城市 · Top 1000 上限')
+    expect(loadingWrapper.text()).toContain('筛选项加载中...')
 
-    wrapper.unmount()
+    optionsRequest.resolve({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        rules: ['r1'],
+        provinces: ['广东省'],
+        cities: [{ province: '广东省', city: '深圳市' }],
+        statuses: ['ok'],
+      }),
+    })
+    await flushPage()
+
+    expect(loadingWrapper.text()).toContain('加载中...')
+
+    geoRequest.resolve({
+      ok: true,
+      status: 200,
+      json: async () => geoJSON,
+    })
+    await flushPage()
+
+    expect(loadingWrapper.text()).toContain('当前窗口暂无城市指标数据')
+    loadingWrapper.unmount()
+
+    stubFetch({ geoOK: false })
+    const errorWrapper = mount(MapPage)
+    await flushPage()
+
+    expect(errorWrapper.text()).toContain('底图加载失败')
+    expect(errorWrapper.text()).not.toContain('城市连接热度（市级边界） · 分析型页面（不自动刷新）')
+    expect(errorWrapper.text()).not.toContain('已载入 1 城市 · Top 1000 上限')
+
+    errorWrapper.unmount()
   })
 
   it('renders full returned city list without hardcoded 12-row truncation', async () => {

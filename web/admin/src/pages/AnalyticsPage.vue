@@ -217,7 +217,7 @@ async function search() {
 <template>
   <section class="panel">
     <div class="panel-header">
-      <h2>统计/分析</h2>
+      <h2>统计</h2>
       <div class="filters">
         <label>
           时间范围
@@ -276,7 +276,6 @@ async function search() {
       </div>
     </div>
 
-    <p class="meta">分析型页面：不自动刷新（手动检索）</p>
     <p v-if="optionsLoading" class="meta">筛选项加载中...</p>
     <p v-if="loading" class="meta">加载中...</p>
     <p v-if="error" class="error">{{ error }}</p>

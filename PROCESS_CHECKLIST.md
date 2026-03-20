@@ -93,10 +93,34 @@
   - Commit intent:
     - `git add PROCESS_CHECKLIST.md docs/superpowers/plans/2026-03-20-admin-copy-simplification.md`
     - `git commit -m "docs(ui): capture copy simplification plan"`
+  - Commit result:
+    - PASS: `bc941a1 docs(ui): capture copy simplification plan`
 
 - use superpower:executing-plans skill
-  - Status: PENDING
+  - Status: DONE
   - TDD requirement: RED -> GREEN -> regression verification
+  - Preflight:
+    - Command: `git fetch origin main && git branch --show-current && git merge-base --is-ancestor origin/main HEAD`
+    - Result: PASS (`feat/map-copy-cleanup-20260320`, merge-base exit `0`)
+  - RED:
+    - Command: `npm --prefix web/admin test -- --run src/pages/App.test.ts src/pages/AnalyticsPage.test.ts src/pages/MapPage.test.ts -t "renders statistics tab label as 统计|renders heading as 统计 and omits the redundant manual-refresh hint while preserving loading and error states|omits redundant map meta hints while preserving loading error and empty-state messages"`
+    - Result: FAIL
+    - Failure summary:
+      - `App.test.ts`: received `统计/分析`, expected `统计`
+      - `AnalyticsPage.test.ts`: still rendered `统计/分析` and `分析型页面：不自动刷新（手动检索）`
+      - `MapPage.test.ts`: still rendered `城市连接热度（市级边界） · 分析型页面（不自动刷新）`
+  - GREEN:
+    - Command: `npm --prefix web/admin test -- --run src/pages/App.test.ts src/pages/AnalyticsPage.test.ts src/pages/MapPage.test.ts -t "renders statistics tab label as 统计|renders heading as 统计 and omits the redundant manual-refresh hint while preserving loading and error states|omits redundant map meta hints while preserving loading error and empty-state messages"`
+    - Result: PASS (`3` tests passed)
+  - Regression:
+    - Command: `npm --prefix web/admin test -- --run src/pages/App.test.ts src/pages/AnalyticsPage.test.ts src/pages/MapPage.test.ts`
+    - Result: PASS (`31` tests passed)
+  - Build:
+    - Command: `npm --prefix web/admin run build`
+    - Result: PASS (existing Vite chunk-size warning only)
+  - Commit intent:
+    - `git add PROCESS_CHECKLIST.md web/admin/src/App.vue web/admin/src/pages/App.test.ts web/admin/src/pages/AnalyticsPage.vue web/admin/src/pages/AnalyticsPage.test.ts web/admin/src/pages/MapPage.vue web/admin/src/pages/MapPage.test.ts`
+    - `git commit -m "fix(ui): simplify admin copy and rename statistics tab"`
 
 - use superpower:requesting-code-review skill
   - Status: PENDING
@@ -123,6 +147,11 @@
 - Writing-plans阶段无需运行产品测试；plan review 结果：
   - Round 1: FAIL
   - Round 5: PASS
+- Executing-plans阶段验证：
+  - RED focused suite: FAIL
+  - GREEN focused suite: PASS
+  - Related page regression suite: PASS (`31` tests)
+  - Frontend build: PASS
 
 ## Hard Check
 

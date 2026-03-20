@@ -7,10 +7,81 @@ async function flushPage() {
   await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve
+    reject = innerReject
+  })
+  return { promise, resolve, reject }
+}
+
 describe('AnalyticsPage', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
+  })
+
+  it('renders heading as 统计 and omits the redundant manual-refresh hint while preserving loading and error states', async () => {
+    const optionsRequest = deferred<{
+      ok: boolean
+      status: number
+      json: () => Promise<any>
+    }>()
+    const analyticsRequest = deferred<{
+      ok: boolean
+      status: number
+      json: () => Promise<any>
+    }>()
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input)
+        if (url.includes('/api/analytics/options?')) {
+          return optionsRequest.promise
+        }
+        if (url.includes('/api/analytics?')) {
+          return analyticsRequest.promise
+        }
+        throw new Error('unexpected')
+      }),
+    )
+
+    const wrapper = mount(AnalyticsPage)
+    await flushPage()
+
+    expect(wrapper.text()).toContain('统计')
+    expect(wrapper.text()).not.toContain('统计/分析')
+    expect(wrapper.text()).not.toContain('分析型页面：不自动刷新（手动检索）')
+    expect(wrapper.text()).toContain('筛选项加载中...')
+
+    optionsRequest.resolve({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        rules: ['r1'],
+        provinces: ['广东'],
+        cities: [{ province: '广东', city: '深圳' }],
+        statuses: ['ok'],
+      }),
+    })
+    await flushPage()
+
+    await wrapper.find('button.btn').trigger('click')
+    await flushPage()
+
+    expect(wrapper.text()).toContain('加载中...')
+
+    analyticsRequest.resolve({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+    })
+    await flushPage()
+
+    expect(wrapper.text()).toContain('request failed: 500')
   })
 
   it('does not auto-refresh analytics and requests backend aggregation once when searching', async () => {
