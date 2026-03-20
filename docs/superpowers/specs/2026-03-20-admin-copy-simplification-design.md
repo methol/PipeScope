@@ -10,6 +10,9 @@
   - visible copy cleanup in this task applies only to strings rendered from the three files above
   - documentation files and non-visible historical references are out of scope
   - if a same-class redundant hint is found elsewhere inside those three files, it should be cleaned up in the same pass
+- Process artifacts:
+  - `PROCESS_CHECKLIST.md`, archived checklist docs, and PR reference docs are required delivery artifacts for this task
+  - these files are workflow traceability outputs, not part of the user-visible copy-change product scope
 - User-requested cleanup is specific:
   - delete or shrink redundant top-of-page prompts such as:
     - `城市连接热度（市级边界） · 分析型页面（不自动刷新）`

@@ -57,10 +57,42 @@
   - Commit intent:
     - `git add PROCESS_CHECKLIST.md docs/superpowers/specs/2026-03-20-admin-copy-simplification-design.md`
     - `git commit -m "docs(ui): capture copy simplification design"`
+  - Commit result:
+    - PASS: `a318fcf docs(ui): capture copy simplification design`
 
 - use superpower:writing-plans skill
-  - Status: PENDING
+  - Status: DONE
   - Artifact target: `docs/superpowers/plans/2026-03-20-admin-copy-simplification.md`
+  - Review rounds:
+    - Plan review round 1: FAIL
+      - Issue summary:
+        - 保留的 loading/error/empty-state 测试要求不完整
+        - `npm test` / `npm run build` 未显式指向 `web/admin`
+        - spec 对“产品范围”与“流程留痕产物”的边界表述不一致
+      - Action:
+        - 在 spec 补充 process artifacts 说明
+        - 在 plan 补充保留状态测试
+        - 所有前端命令统一改为 `npm --prefix web/admin ...`
+    - Plan review round 2: PENDING
+      - Issue summary:
+        - “禁止 subagent-driven implementation” 与 “reviewer subagent” 的用途边界还不够明确
+      - Action:
+        - 明确 reviewer subagent 仅允许用于 spec/plan/code review，不用于实现
+    - Plan review round 3: PENDING
+      - Issue summary:
+        - 计划未显式要求确认当前 feature 分支基于最新 `main`
+      - Action:
+        - 在 Chunk 1 增加 branch preflight 校验步骤与命令
+    - Plan review round 4: PENDING
+      - Issue summary:
+        - branch preflight 用了固定 SHA，时间一久会失效
+      - Action:
+        - 改为 `git fetch origin main` + `git merge-base --is-ancestor origin/main HEAD`
+    - Plan review round 5: PENDING
+      - Result: `Approved`
+  - Commit intent:
+    - `git add PROCESS_CHECKLIST.md docs/superpowers/plans/2026-03-20-admin-copy-simplification.md`
+    - `git commit -m "docs(ui): capture copy simplification plan"`
 
 - use superpower:executing-plans skill
   - Status: PENDING
@@ -88,6 +120,9 @@
 - Brainstorming阶段无需运行产品测试；spec review 结果：
   - Round 1: FAIL
   - Round 2: PASS
+- Writing-plans阶段无需运行产品测试；plan review 结果：
+  - Round 1: FAIL
+  - Round 5: PASS
 
 ## Hard Check
 
