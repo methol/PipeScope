@@ -20,7 +20,7 @@ const tab = ref<Tab>('map')
       <button :class="{ active: tab === 'map' }" @click="tab = 'map'">地图</button>
       <button :class="{ active: tab === 'rules' }" @click="tab = 'rules'">规则</button>
       <button :class="{ active: tab === 'realtime' }" @click="tab = 'realtime'">实时</button>
-      <button :class="{ active: tab === 'analytics' }" @click="tab = 'analytics'">统计/分析</button>
+      <button :class="{ active: tab === 'analytics' }" @click="tab = 'analytics'">统计</button>
     </nav>
 
     <main class="content">

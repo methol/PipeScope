@@ -38,10 +38,6 @@ let mapLoading: Promise<void> | null = null
 const title = computed(() => (metric.value === 'bytes' ? '城市流量热度（市级边界）' : '城市连接热度（市级边界）'))
 const sidebarTitle = computed(() => (metric.value === 'bytes' ? '按流量排序' : '按连接数排序'))
 const emptyHint = computed(() => (!loading.value && !error.value && cityItems.value.length === 0 ? '当前窗口暂无城市指标数据' : ''))
-const returnedCityCountText = computed(() => `已载入 ${cityItems.value.length} 城市 · Top ${resolveEffectiveLimit()} 上限`)
-const returnedCityCountTitle = computed(
-  () => `当前窗口实际返回 ${cityItems.value.length} 个城市；Top ${resolveEffectiveLimit()} 只是返回上限，不保证达到该数量。`,
-)
 
 function resolveEffectiveLimit(): string {
   const parsedPreset = Number(limit.value)
@@ -364,7 +360,6 @@ function onResize() {
       </div>
     </div>
 
-    <p class="meta">{{ title }} · 分析型页面（不自动刷新）</p>
     <p v-if="optionsLoading" class="meta">筛选项加载中...</p>
     <p v-if="loading" class="meta">加载中...</p>
     <p v-if="error" class="error">{{ error }}</p>
@@ -382,7 +377,6 @@ function onResize() {
           <div class="sidebar-header">
             <p class="sidebar-eyebrow">城市统计</p>
             <h3>{{ sidebarTitle }}</h3>
-            <p class="meta sidebar-meta" :title="returnedCityCountTitle">{{ returnedCityCountText }}</p>
           </div>
 
           <div class="city-list-scroll">
@@ -488,10 +482,6 @@ function onResize() {
 .sidebar-header h3 {
   margin: 0;
   font-size: 16px;
-}
-
-.sidebar-meta {
-  margin: 0;
 }
 
 .city-list-scroll {
